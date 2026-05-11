@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Bảng 1: Người dùng
+model User {
+  id            Int            @id @default(autoincrement())
+  email         String         @unique
+  password      String
+  permissions   String[]       @default(["CHAT", "CONV_C", "CONV_R", "CONV_U", "CONV_D"]) 
+  conversations Conversation[]
+}
+
+// Bảng 2: Nhóm
+model Group {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  permissions String[] @default([])
+}
+
+// Bảng 3: Hội thoại (để quản lý chat)
+model Conversation {
+  id        Int      @id @default(autoincrement())
+  title     String
+  messages  Json     @default("[]") 
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+}
