@@ -6,6 +6,10 @@ const errorHandler = (err, req, res, next) => {
   if (err.message === 'USER_NOT_FOUND' || err.message === 'WRONG_PASSWORD') {
     return res.status(401).json({ message: "Email hoặc mật khẩu không chính xác!" });
   }
+  // lỗi trùng email khi tạo user mới
+  if (err.message === 'EMAIL_ALREADY_EXISTS') {
+     return res.status(409).json({ message: "Email này đã tồn tại trong hệ thống!" });
+    }
 
   // Các lỗi còn lại
   return res.status(500).json({ message: "Lỗi hệ thống nội bộ", error: err.message });

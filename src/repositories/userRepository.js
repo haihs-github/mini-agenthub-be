@@ -8,7 +8,15 @@ class UserRepository {
       include: { groups: true }
     });
   }
+  //  BKAV HaiHS : tìm kiếm người dùng theo email - end
+
+//   BKAV HaiHS : tạo người dùng mới - start
+  async create(userData) {
+    return await prisma.user.create({
+      data: userData
+    });
+  }
+//   BKAV HaiHS : tạo người dùng mới - end
 }
-//  BKAV HaiHS : tìm kiếm người dùng theo email - start
 
 module.exports = new UserRepository();
