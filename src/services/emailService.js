@@ -1,35 +1,25 @@
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 class EmailService {
-// BKAV HaiHS : cấu hình transporter để gửi email - start
-    constructor() {
-        this.transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465, // Chuyển sang dùng cổng 587
-        secure: true, // Cổng 465 yêu cầu secure: true
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-        },
-
-        // BẮT BUỘC THÊM: Ép timeout 10 giây (10000ms),
-        tls: {
-            rejectUnauthorized: false // Bỏ qua lỗi kẹt chứng chỉ SSL trên môi trường máy tính cá nhân
-        },
-        family: 4,
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
-        });
-
-        // Code test thử kết nối ngay lúc bật server
-        this.transporter.verify((error, success) => {
-        if (error) {
-            console.error('❌ Lỗi cấu hình Email:', error.message);
-        } else {
-            console.log('✅ Hệ thống Email đã sẵn sàng gửi thư!');
-        }
-        });
-    }
+  // BKAV HaiHS : cấu hình transporter để gửi email - start
+  constructor() {
+    this.transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      proxy: "process.env.PROXY",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+      tls: {
+        rejectUnauthorized: false, // Bỏ qua lỗi chứng chỉ
+      },
+      family: 4, // Ép IPv4
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+    });
+  }
 
   async sendWelcomeEmail(toEmail, tempPassword) {
     const loginLink = `${process.env.APP_URL}/login`; // Link dẫn tới trang đăng nhập Frontend
@@ -37,7 +27,7 @@ class EmailService {
     const mailOptions = {
       from: `"Mini AgentHub Admin" <${process.env.EMAIL_USER}>`,
       to: toEmail,
-      subject: '🚀 Chào mừng bạn gia nhập hệ thống Mini AgentHub!',
+      subject: "🚀 Chào mừng bạn gia nhập hệ thống Mini AgentHub!",
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
           <h2 style="color: #2c3e50; text-align: center;">Chào mừng đến với Mini AgentHub</h2>
@@ -65,7 +55,7 @@ class EmailService {
 
     await this.transporter.sendMail(mailOptions);
   }
-// BKAV HaiHS : cấu hình transporter để gửi email - end
+  // BKAV HaiHS : cấu hình transporter để gửi email - end
 }
 
 module.exports = new EmailService();
