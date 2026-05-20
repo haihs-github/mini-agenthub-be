@@ -20,7 +20,9 @@ class EmailService {
       socketTimeout: 10000,
     });
   }
+  // BKAV HaiHS : cấu hình transporter để gửi email - end
 
+  // BKAV HaiHS : hàm gửi email - start
   async sendWelcomeEmail(toEmail, tempPassword) {
     const loginLink = `${process.env.APP_URL}/login`; // Link dẫn tới trang đăng nhập Frontend
 
@@ -55,7 +57,7 @@ class EmailService {
 
     await this.transporter.sendMail(mailOptions);
   }
-  // BKAV HaiHS : cấu hình transporter để gửi email - end
+  // BKAV HaiHS : hàm gửi email - end
 }
 
 module.exports = new EmailService();
