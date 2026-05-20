@@ -19,6 +19,7 @@ const authMiddleware = (req, res, next) => {
     const decoded = jwt.verify(token, SECRET_KEY);
 
     // 3. Đính kèm ID người dùng vào req để các tầng sau (Controller/Service) biết ai đang gọi
+    req.user = decoded; //Lưu toàn bộ thông tin đã giải mã (id, email, permissions) vào req.user
     req.userId = decoded.id;
 
     next(); // Cho phép đi tiếp vào Controller

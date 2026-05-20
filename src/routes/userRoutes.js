@@ -1,8 +1,15 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const userController = require('../controllers/userController');
+const authMiddleware = require("../middlewares/authMiddleware");
+const permissionMiddleware = require("../middlewares/permissionMiddleware");
+const userController = require("../controllers/userController");
 
 // API: Admin tạo User mới
-router.post('/create', userController.createUser);
+router.post(
+  "/create",
+  authMiddleware,
+  permissionMiddleware("USER_C"),
+  userController.createUser,
+);
 
 module.exports = router;
