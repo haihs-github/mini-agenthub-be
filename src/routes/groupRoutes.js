@@ -12,4 +12,12 @@ router.post(
   groupController.createGroup,
 );
 
+// API Sửa quyền của nhóm (GROUP_U) - THÊM DÒNG NÀY:
+router.put(
+  "/:id/permissions",
+  authMiddleware,
+  permissionMiddleware("GROUP_U"),
+  groupController.updatePermissions,
+);
+
 module.exports = router;

@@ -18,6 +18,23 @@ class GroupService {
     return newGroup;
   }
   // BKAV HaiHS : sử lý tạo nhóm mới - end
+
+  //   BKAV HaiHS : xử lý cập nhật quyền cho nhóm - start
+  async updateGroupPermissions(groupId, permissions) {
+    // 1. Kiểm tra xem nhóm có tồn tại trong hệ thống không
+    const group = await groupRepository.findById(groupId);
+    if (!group) {
+      throw new Error("GROUP_NOT_FOUND");
+    }
+
+    // 2. Gọi Repo để cập nhật mảng quyền mới
+    const updatedGroup = await groupRepository.updatePermissions(
+      groupId,
+      permissions,
+    );
+    return updatedGroup;
+  }
+  //   BKAV HaiHS : xử lý cập nhật quyền cho nhóm - end
 }
 
 module.exports = new GroupService();

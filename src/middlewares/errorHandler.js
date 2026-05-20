@@ -28,6 +28,13 @@ const errorHandler = (err, req, res, next) => {
       .json({ message: "Tên nhóm này đã tồn tại trên hệ thống!" });
   }
 
+  // lỗi không tìm thấy nhóm khi cập nhật quyền cho nhóm
+  if (err.message === "GROUP_NOT_FOUND") {
+    return res
+      .status(404)
+      .json({ message: "Không tìm thấy Nhóm yêu cầu trên hệ thống!" });
+  }
+
   // Các lỗi còn lại
   return res
     .status(500)
