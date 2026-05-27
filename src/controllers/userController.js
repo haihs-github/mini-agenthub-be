@@ -1,27 +1,31 @@
-const userService = require('../services/userService');
+const userService = require("../services/userService");
 
 class UserController {
-// BKAV HaiHS : tạo người dùng mới - start
+  // BKAV HaiHS : tạo người dùng mới - start
   async createUser(req, res, next) {
     try {
-      const { email, permissions } = req.body;
+      const { email, fullname, groupIds } = req.body;
 
       if (!email) {
         return res.status(400).json({ message: "Bắt buộc phải nhập Email!" });
       }
 
       // Giao việc cho Service
-      const result = await userService.createUserByAdmin(email, permissions);
+      const result = await userService.createUserByAdmin(
+        email,
+        fullname,
+        groupIds,
+      );
 
       res.status(201).json({
         message: "Tạo tài khoản và gửi Email thành công!",
-        data: result
+        data: result,
       });
     } catch (error) {
       next(error);
     }
   }
-// BKAV HaiHS : tạo người dùng mới - end
+  // BKAV HaiHS : tạo người dùng mới - end
 }
 
 module.exports = new UserController();

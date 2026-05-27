@@ -14,6 +14,14 @@ class UserRepository {
   async create(userData) {
     return await prisma.user.create({
       data: userData,
+      include: {
+        groups: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
     });
   }
   //   BKAV HaiHS : tạo người dùng mới - end
