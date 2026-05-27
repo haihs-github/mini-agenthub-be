@@ -121,6 +121,35 @@ class GroupController {
     }
   }
   // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
+
+  // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - start
+  async getAllGroups(req, res, next) {
+    try {
+      // Lấy tham số từ URL dạng: /api/groups?page=1&limit=5
+      let { page, limit } = req.query;
+
+      // Ép kiểu về số nguyên, nếu không truyền hoặc truyền sai thì lấy mặc định (Trang 1, mỗi trang 10 phần tử)
+      page = parseInt(page) || 1;
+      limit = parseInt(limit) || 10;
+
+      // Chặn trường hợp người dùng cố tình truyền số âm
+      if (page < 1) page = 1;
+      if (limit < 1) limit = 10;
+
+      // Bàn giao cho tầng Service xử lý tính toán
+      const result = await groupService.getAllGroups(page, limit);
+
+      // Trả kết quả chuẩn RESTful
+      res.status(200).json({
+        message: "Lấy danh sách Nhóm thành công!",
+        data: result.groups,
+        pagination: result.pagination, // Gửi kèm thông tin phân trang cho Frontend vẽ nút bấm
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - end
 }
 
 module.exports = new GroupController();

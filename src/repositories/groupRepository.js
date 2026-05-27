@@ -90,6 +90,28 @@ class GroupRepository {
     });
   }
   // BKAV HaiHS : Xóa người dùng khỏi nhóm - end
+
+  // BKAV HaiHS : Lấy danh sách nhóm có phân trang - start
+  async findAndCountAll(skip, take) {
+    // Sử dụng Promise.all để chạy đồng thời cả 2 câu lệnh dưới DB, giúp tối ưu tốc độ
+    const [groups, total] = await Promise.all([
+      prisma.group.findMany({
+        skip: skip,
+        take: take,
+        orderBy: { id: "asc" }, // Sắp xếp theo ID tăng dần cho gọn gàng
+        // Thêm phần này để đếm xem nhóm có bao nhiêu thành viên (rất hữu ích cho Frontend)
+        include: {
+          _count: {
+            select: { users: true },
+          },
+        },
+      }),
+      prisma.group.count(), // Đếm tổng số bản ghi Group trong DB
+    ]);
+
+    return { groups, total };
+  }
+  // BKAV HaiHS : Lấy danh sách nhóm có phân trang - end
 }
 
 module.exports = new GroupRepository();

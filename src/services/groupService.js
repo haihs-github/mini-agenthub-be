@@ -107,6 +107,36 @@ class GroupService {
     return await groupRepository.removeUsersFromGroup(groupId, userIds);
   }
   // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
+
+  // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - start
+  async getAllGroups(page, limit) {
+    // 1. Tính toán vị trí bắt đầu bỏ qua (skip)
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    // 2. Gọi Repo lấy dữ liệu
+    const { groups, total } = await groupRepository.findAndCountAll(skip, take);
+
+    // 3. Tính toán tổng số trang
+    const totalPages = Math.ceil(total / limit);
+
+    // 4. Trả về dữ liệu sạch kèm cấu trúc phân trang chuẩn chỉnh
+    return {
+      groups: groups.map((g) => ({
+        id: g.id,
+        name: g.name,
+        permissions: g.permissions,
+        memberCount: g._count.users, // Trả về số lượng thành viên trong nhóm
+      })),
+      pagination: {
+        totalItems: total, // Tổng số nhóm trong DB
+        totalPages: totalPages, // Tổng số trang
+        currentPage: page, // Trang hiện tại
+        limit: limit, // Số lượng phần tử trên 1 trang
+      },
+    };
+  }
+  // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - end
 }
 
 module.exports = new GroupService();

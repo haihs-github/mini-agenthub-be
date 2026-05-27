@@ -4,6 +4,15 @@ const groupController = require("../controllers/groupController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const permissionMiddleware = require("../middlewares/permissionMiddleware");
 
+// BKAV HaiHS : API Lấy danh sách nhóm - Phải Đăng nhập + Có quyền GROUP_R - start
+router.get(
+  "/",
+  authMiddleware,
+  permissionMiddleware("GROUP_R"),
+  groupController.getAllGroups,
+);
+// BKAV HaiHS : API Lấy danh sách nhóm - Phải Đăng nhập + Có quyền GROUP_R - end
+
 // BKAV HaiHS : API Tạo nhóm: Phải Đăng nhập + Có quyền GROUP_C - start
 router.post(
   "/create",
