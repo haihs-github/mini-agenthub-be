@@ -112,6 +112,24 @@ class GroupRepository {
     return { groups, total };
   }
   // BKAV HaiHS : Lấy danh sách nhóm có phân trang - end
+
+  // BKAV HaiHS : Lấy thông tin chi tiết nhóm kèm danh sách thành viên - start
+  async findByIdWithUsers(id) {
+    return await prisma.group.findUnique({
+      where: { id: parseInt(id) },
+      // Kéo thêm danh sách thành viên thuộc nhóm này
+      include: {
+        users: {
+          select: {
+            id: true,
+            email: true,
+            fullname: true, // Chỉ lấy các thông tin cần thiết, bỏ qua password
+          },
+        },
+      },
+    });
+  }
+  // BKAV HaiHS : Lấy thông tin chi tiết nhóm kèm danh sách thành viên - end
 }
 
 module.exports = new GroupRepository();

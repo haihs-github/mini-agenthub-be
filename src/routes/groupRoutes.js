@@ -13,6 +13,15 @@ router.get(
 );
 // BKAV HaiHS : API Lấy danh sách nhóm - Phải Đăng nhập + Có quyền GROUP_R - end
 
+// BKAV HaiHS : API Lấy chi tiết nhóm theo ID - Phải Đăng nhập + Có quyền GROUP_R - start
+router.get(
+  "/:id",
+  authMiddleware,
+  permissionMiddleware("GROUP_R"),
+  groupController.getGroupDetail,
+);
+// BKAV HaiHS : API Lấy chi tiết nhóm theo ID - Phải Đăng nhập + Có quyền GROUP_R - start
+
 // BKAV HaiHS : API Tạo nhóm: Phải Đăng nhập + Có quyền GROUP_C - start
 router.post(
   "/create",

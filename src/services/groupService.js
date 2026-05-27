@@ -137,6 +137,20 @@ class GroupService {
     };
   }
   // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - end
+
+  // BKAV HaiHS : xử lý lấy chi tiết nhóm (kèm danh sách thành viên) - start
+  async getGroupDetail(groupId) {
+    // 1. Gọi Repo check DB lấy nhóm kèm danh sách thành viên
+    const group = await groupRepository.findByIdWithUsers(groupId);
+
+    // 2. Nếu không tìm thấy nhóm, ném lỗi ra ngoài
+    if (!group) {
+      throw new Error("GROUP_NOT_FOUND");
+    }
+
+    return group;
+  }
+  // BKAV HaiHS : xử lý lấy chi tiết nhóm (kèm danh sách thành viên) - end
 }
 
 module.exports = new GroupService();

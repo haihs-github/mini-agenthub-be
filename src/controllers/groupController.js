@@ -150,6 +150,25 @@ class GroupController {
     }
   }
   // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - end
+
+  // BKAV HaiHS : xử lý lấy chi tiết thông tin nhóm - start
+  async getGroupDetail(req, res, next) {
+    try {
+      const { id } = req.params; // Lấy ID nhóm từ URL (ví dụ: /api/groups/1)
+
+      // Đẩy việc xuống tầng Service
+      const result = await groupService.getGroupDetail(id);
+
+      // Trả kết quả thành công cho Client
+      res.status(200).json({
+        message: "Lấy chi tiết thông tin Nhóm thành công!",
+        data: result,
+      });
+    } catch (error) {
+      next(error); // Nếu có lỗi (ví dụ: GROUP_NOT_FOUND), đẩy ra errorHandler xử lý
+    }
+  }
+  // BKAV HaiHS : xử lý lấy chi tiết thông tin nhóm - end
 }
 
 module.exports = new GroupController();
