@@ -70,6 +70,26 @@ class GroupRepository {
     });
   }
   // BKAV HaiHS : Xóa nhóm - end
+
+  // BKAV HaiHS : Xóa người dùng khỏi nhóm - start
+  async removeUsersFromGroup(groupId, userIds) {
+    return await prisma.group.update({
+      where: { id: parseInt(groupId) },
+      data: {
+        users: {
+          // Cắt đứt liên kết với mảng ID người dùng truyền lên
+          disconnect: userIds.map((id) => ({ id: parseInt(id) })),
+        },
+      },
+      // Trả về danh sách thành viên còn lại trong nhóm sau khi xóa để tiện kiểm tra
+      include: {
+        users: {
+          select: { id: true, email: true, fullname: true },
+        },
+      },
+    });
+  }
+  // BKAV HaiHS : Xóa người dùng khỏi nhóm - end
 }
 
 module.exports = new GroupRepository();

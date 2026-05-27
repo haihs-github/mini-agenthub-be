@@ -95,6 +95,32 @@ class GroupController {
     }
   }
   // BKAV HaiHS : xử lý xóa nhóm - end
+
+  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
+  async removeUsers(req, res, next) {
+    try {
+      const { id } = req.params; // Lấy ID Nhóm từ URL
+      const { userIds } = req.body; // Lấy mảng ID người dùng cần xóa từ Body
+
+      // Kiểm tra dữ liệu đầu vào bắt buộc phải là mảng
+      if (!userIds || !Array.isArray(userIds)) {
+        return res.status(400).json({
+          message: "Dữ liệu userIds truyền lên bắt buộc phải là một mảng!",
+        });
+      }
+
+      // Đẩy việc xuống tầng Service xử lý
+      const result = await groupService.removeUsersFromGroup(id, userIds);
+
+      res.status(200).json({
+        message: "Xóa các thành viên khỏi Nhóm thành công!",
+        data: result,
+      });
+    } catch (error) {
+      next(error); // Gửi lỗi sang errorHandler
+    }
+  }
+  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
 }
 
 module.exports = new GroupController();

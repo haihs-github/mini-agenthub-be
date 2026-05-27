@@ -40,4 +40,13 @@ router.delete(
 );
 // BKAV HaiHS : API Xóa nhóm (GROUP_D) - end
 
+// BKAV HaiHS : API Xóa thành viên khỏi nhóm (GROUP_DELETE_USER) - start
+router.delete(
+  "/:id/users",
+  authMiddleware,
+  permissionMiddleware("GROUP_DELETE_USER"),
+  groupController.removeUsers,
+);
+// BKAV HaiHS : API Xóa thành viên khỏi nhóm (GROUP_DELETE_USER) - end
+
 module.exports = router;
