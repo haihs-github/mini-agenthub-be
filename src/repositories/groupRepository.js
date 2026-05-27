@@ -34,14 +34,14 @@ class GroupRepository {
   }
   // BKAV HaiHS : Tìm nhóm theo ID - end
 
-  // BKAV HaiHS : Cập nhật mảng quyền mới cho nhóm - start
-  async updatePermissions(id, permissions) {
+  // BKAV HaiHS : Cập nhật nhóm - start
+  async update(id, updateData) {
     return await prisma.group.update({
       where: { id: parseInt(id) },
-      data: { permissions: permissions },
+      data: updateData, // Sẽ nhận vào { name } hoặc { permissions } hoặc cả hai
     });
   }
-  // BKAV HaiHS : Cập nhật mảng quyền mới cho nhóm - end
+  // BKAV HaiHS : Cập nhật nhóm - end
 
   // BKAV HaiHS : Thêm người dùng vào nhóm - start
   async addUsersToGroup(groupId, userIds) {

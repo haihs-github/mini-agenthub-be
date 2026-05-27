@@ -27,22 +27,37 @@ class GroupService {
   }
   // BKAV HaiHS : sử lý tạo nhóm mới - end
 
-  //   BKAV HaiHS : xử lý cập nhật quyền cho nhóm - start
-  async updateGroupPermissions(groupId, permissions) {
-    // 1. Kiểm tra xem nhóm có tồn tại trong hệ thống không
+  //   BKAV HaiHS : xử lý cập nhật cho nhóm - start
+  async updateGroup(groupId, name, permissions) {
+    // 1. Kiểm tra xem nhóm có tồn tại không
     const group = await groupRepository.findById(groupId);
     if (!group) {
       throw new Error("GROUP_NOT_FOUND");
     }
 
-    // 2. Gọi Repo để cập nhật mảng quyền mới
-    const updatedGroup = await groupRepository.updatePermissions(
-      groupId,
-      permissions,
-    );
-    return updatedGroup;
+    const updateData = {};
+
+    // 2. Logic kiểm tra trùng tên nhóm
+    if (name && name !== group.name) {
+      const existingGroup = await groupRepository.findByName(name);
+      if (existingGroup) {
+        throw new Error("GROUP_ALREADY_EXISTS");
+      }
+      updateData.name = name; // Hợp lệ thì điền vào dữ liệu cập nhật
+    }
+
+    // 3. Logic kiểm tra quyền truyền lên
+    if (permissions) {
+      if (!Array.isArray(permissions)) {
+        throw new Error("PERMISSIONS_MUST_BE_ARRAY");
+      }
+      updateData.permissions = permissions;
+    }
+
+    // 4. Tiến hành gọi Repo cập nhật những trường thay đổi
+    return await groupRepository.update(groupId, updateData);
   }
-  //   BKAV HaiHS : xử lý cập nhật quyền cho nhóm - end
+  //   BKAV HaiHS : xử lý cập nhật cho nhóm - end
 
   // BKAV HaiHS : xử lý thêm người dùng vào nhóm - start
   async addUsersToGroup(groupId, userIds) {

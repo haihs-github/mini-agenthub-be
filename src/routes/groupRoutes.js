@@ -15,10 +15,10 @@ router.post(
 
 // BKAV HaiHS : API Sửa quyền của nhóm (GROUP_U) - start
 router.put(
-  "/:id/permissions",
+  "/:id",
   authMiddleware,
   permissionMiddleware("GROUP_U"),
-  groupController.updatePermissions,
+  groupController.updateGroup,
 );
 // BKAV HaiHS : API Sửa quyền của nhóm (GROUP_U) - end
 

@@ -16,11 +16,9 @@ class GroupController {
 
       // Kiểm tra định dạng dữ liệu userIds nếu admin có truyền lên
       if (userIds && !Array.isArray(userIds)) {
-        return res
-          .status(400)
-          .json({
-            message: "Dữ liệu userIds truyền lên bắt buộc phải là một mảng!",
-          });
+        return res.status(400).json({
+          message: "Dữ liệu userIds truyền lên bắt buộc phải là một mảng!",
+        });
       }
 
       // Đẩy việc xuống tầng Service
@@ -36,31 +34,24 @@ class GroupController {
   }
   // BKAV HaiHS : Xử lý tao nhóm mới - end
 
-  //   BKAV HaiHS : xử lý cập nhật quyền cho nhóm - start
-  async updatePermissions(req, res, next) {
+  //   BKAV HaiHS : xử lý cập nhật cho nhóm - start
+  async updateGroup(req, res, next) {
     try {
-      const { id } = req.params; // Lấy id nhóm từ URL (ví dụ: /api/groups/1/permissions thì id = 1)
-      const { permissions } = req.body;
+      const { id } = req.params; // Lấy ID nhóm từ URL
+      const { name, permissions } = req.body; // Lấy cả name và permissions từ Body
 
-      // Kiểm tra xem dữ liệu truyền lên có phải là mảng không
-      if (!permissions || !Array.isArray(permissions)) {
-        return res.status(400).json({
-          message: "Dữ liệu permissions truyền lên bắt buộc phải là một mảng!",
-        });
-      }
-
-      // Giao việc cho Service xử lý logic
-      const result = await groupService.updateGroupPermissions(id, permissions);
+      // Gọi Service xử lý logic nghiệp vụ nặng đầu
+      const result = await groupService.updateGroup(id, name, permissions);
 
       res.status(200).json({
-        message: "Cập nhật quyền cho Nhóm thành công!",
+        message: "Cập nhật thông tin Nhóm thành công!",
         data: result,
       });
     } catch (error) {
-      next(error); // Gửi lỗi sang errorHandler
+      next(error); // Đẩy lỗi ra errorHandler
     }
   }
-  //   BKAV HaiHS : xử lý cập nhật quyền cho nhóm - end
+  //   BKAV HaiHS : xử lý cập nhật cho nhóm - end
 
   // BKAV HaiHS : xử lý thêm người dùng vào nhóm - start
   async addUsers(req, res, next) {
