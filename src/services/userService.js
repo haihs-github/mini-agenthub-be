@@ -45,6 +45,41 @@ class UserService {
     return newUser;
   }
   // BKAV HaiHS : tạo người dùng mới - end
+
+  // BKAV HaiHS : logic nghiệp vụ lấy danh sách phân trang - start
+  async getAllUsers({ page, limit, search }) {
+    // Đặt giá trị mặc định nếu client không truyền lên
+    const p = parseInt(page) || 1;
+    const l = parseInt(limit) || 10;
+    const skip = (p - 1) * l;
+
+    // Gọi Repo xử lý kết nối DB
+    const { users, totalItems } = await userRepository.findAndCountAll({
+      skip,
+      take: l,
+      search,
+    });
+
+    // Bảo mật: Loại bỏ trường password của toàn bộ danh sách trả về
+    const safeUsers = users.map((user) => {
+      const { password, ...safeUser } = user;
+      return safeUser;
+    });
+
+    // Tính toán tổng số trang dựa trên số lượng item mỗi trang
+    const totalPages = Math.ceil(totalItems / l);
+
+    return {
+      users: safeUsers,
+      pagination: {
+        page: p,
+        limit: l,
+        totalItems: totalItems,
+        totalPages: totalPages,
+      },
+    };
+  }
+  // BKAV HaiHS : logic nghiệp vụ lấy danh sách phân trang - end
 }
 
 module.exports = new UserService();

@@ -55,6 +55,38 @@ class UserRepository {
     });
   }
   // BKAV HaiHS : Tìm người dùng theo ID kèm theo nhóm và quyền của nhóm - end
+
+  // BKAV HaiHS : tìm kiếm và phân trang người dùng - start
+  async findAndCountAll({ skip, take, search }) {
+    // Xây dựng điều kiện tìm kiếm động (Tìm theo Tên hoặc Email) Mode 'insensitive' là không phân biệt hoa thường
+    const where = search
+      ? {
+          OR: [
+            { fullname: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {};
+
+    // Chạy song song cả 2 tác vụ để tối ưu tốc độ Database
+    const [users, totalItems] = await prisma.$transaction([
+      prisma.user.findMany({
+        where: where,
+        skip: parseInt(skip),
+        take: parseInt(take),
+        include: {
+          groups: {
+            select: { id: true, name: true }, // Lấy kèm thông tin nhóm để biết user thuộc nhóm nào
+          },
+        },
+        orderBy: { id: "asc" }, // Sắp xếp theo ID tăng dần
+      }),
+      prisma.user.count({ where: where }), // Đếm tổng số bản ghi khớp điều kiện
+    ]);
+
+    return { users, totalItems };
+  }
+  // BKAV HaiHS : tìm kiếm và phân trang người dùng - end
 }
 
 module.exports = new UserRepository();
