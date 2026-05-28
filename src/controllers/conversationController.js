@@ -65,10 +65,10 @@ class ConversationController {
   }
   // 3. BKAV HaiHS : controller Lấy chi tiết khung chat - start
 
-  // BKAV HaiHS : controller Cập nhật tiêu đề phòng chat - start
+  // BKAV HaiHS : controller Cập nhật tiêu đề conversations - start
   async updateTitle(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID phòng chat từ URL
+      const { id } = req.params; // Lấy ID conversations từ URL
       const userId = req.userId; // Lấy danh tính từ Token
       const { title } = req.body; // Lấy tiêu đề mới từ Body
 
@@ -81,9 +81,9 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Cập nhật tiêu đề phòng chat - end
+  // BKAV HaiHS : controller Cập nhật tiêu đề conversations - end
 
-  // BKAV HaiHS : controller Xóa phòng chat - start
+  // BKAV HaiHS : controller Xóa conversations - start
   async deleteConversation(req, res, next) {
     try {
       const { id } = req.params;
@@ -98,7 +98,108 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Xóa phòng chat - end
+  // BKAV HaiHS : controller Xóa conversations - end
+
+  // BKAV HaiHS : hàm lưu trữ tin nhắn - start
+  async createMessage(messageData) {
+    return await prisma.message.create({
+      data: messageData,
+    });
+  }
+  // BKAV HaiHS : hàm lưu trữ tin nhắn - end
+
+  // BKAV HaiHS : hàm lấy lịch sử tin nhắn - start
+  async getMessages(conversationId) {
+    return await prisma.message.findMany({
+      where: {
+        conversationId: parseInt(conversationId),
+      },
+      orderBy: { createdAt: "asc" }, // Sắp xếp tin nhắn cũ trước, mới sau
+    });
+  }
+  // BKAV HaiHS : hàm lấy lịch sử tin nhắn - end
+
+  // BKAV HaiHS : controller Xử lý Chat - start
+  async handleChat(req, res, next) {
+    try {
+      const { id } = req.params; // ID phòng chat
+      const userId = req.userId; // Danh tính người chat từ Token
+      const { prompt, modelName } = req.body; // Câu hỏi và Model AI lựa chọn
+
+      if (!prompt || prompt.trim() === "") {
+        return res
+          .status(400)
+          .json({ message: "Nội dung câu hỏi không được để trống!" });
+      }
+
+      // 1. Gọi Service chuẩn bị dữ liệu và kích hoạt Stream từ AI Provider
+      const stream = await conversationService.prepareChatStream(
+        id,
+        userId,
+        prompt,
+        modelName,
+      );
+
+      // 2. THIẾT LẬP HEADER CHUẨN SSE (Mở đường ống sống phát trực tiếp dữ liệu)
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      let fullAIResponse = ""; // Biến gom toàn bộ chữ của AI để lưu DB khi kết thúc
+
+      // 3. PHÂN LUỒNG XỬ LÝ STREAM THEO NHÀ CUNG CẤP (Groq Async Iterable vs Flowise Readable Stream)
+      if (modelName !== "flowise" && modelName) {
+        // --- KỊCH BẢN CHAT VỚI VŨ TRỤ GROQ ---
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || "";
+          if (content) {
+            fullAIResponse += content;
+            // Bắn gói tin về client theo đúng định dạng giao thức SSE: data: <chuỗi_json>\n\n
+            res.write(`data: ${JSON.stringify({ content })}\n\n`);
+          }
+        }
+
+        // Khi Groq nhả hết chữ thành công -> Tiến hành lưu câu trả lời hoàn chỉnh vào DB
+        await conversationService.saveAssistantMessage(
+          id,
+          fullAIResponse,
+          modelName,
+        );
+
+        // Bắn tín hiệu kết thúc luồng cho Client biết để dừng trạng thái loading
+        res.write(`data: [DONE]\n\n`);
+        res.end();
+      } else {
+        // --- KỊCH BẢN CHAT VỚI VŨ TRỤ FLOWISE ---
+        // Vì Axios trả về một Node.js Readable Stream chuẩn, ta lắng nghe sự kiện 'data'
+        stream.on("data", (chunk) => {
+          const text = chunk.toString();
+          fullAIResponse += text;
+
+          // Chuyển tiếp (Forward) luồng stream nguyên bản của Flowise thẳng về cho Frontend
+          res.write(chunk);
+        });
+
+        // Khi luồng Stream của Flowise chảy xong hoàn toàn
+        stream.on("end", async () => {
+          // Lưu câu trả lời của Agent vào DB
+          await conversationService.saveAssistantMessage(
+            id,
+            fullAIResponse,
+            "flowise",
+          );
+          res.end();
+        });
+
+        stream.on("error", (err) => {
+          next(err);
+        });
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : controller Xử lý Chat - end
 }
 
 module.exports = new ConversationController();

@@ -1,5 +1,5 @@
 const conversationRepository = require("../repositories/conversationRepository");
-
+const aiService = require("./aiService");
 class ConversationService {
   // BKAV HaiHS : Logic tạo phòng - start
   async createConversation(userId, title) {
@@ -71,6 +71,52 @@ class ConversationService {
     return result;
   }
   // BKAV HaiHS : Logic xóa phòng chat - end
+
+  // BKAV HaiHS : hàm chuẩn bị ngữ cảnh và gọi AI qua aiService - start
+  async prepareChatStream(conversationId, userId, prompt, modelName) {
+    // 1. Kiểm tra nghiêm ngặt xem phòng chat có tồn tại và thuộc về đúng User này không
+    const conversation = await conversationRepository.findByIdAndUser(
+      conversationId,
+      userId,
+    );
+    if (!conversation) {
+      throw new Error("CONVERSATION_NOT_FOUND");
+    }
+
+    // 2. Lưu câu hỏi hiện tại của người dùng vào DB bảng Message
+    await conversationRepository.createMessage({
+      role: "user",
+      content: prompt,
+      modelName: modelName,
+      conversationId: parseInt(conversationId),
+    });
+
+    // 3. Lấy toàn bộ lịch sử tin nhắn cũ để làm ngữ cảnh gửi cho AI
+    const history = await conversationRepository.getMessages(conversationId);
+
+    // Loại bỏ tin nhắn cuối cùng (chính là câu hỏi vừa lưu) ra khỏi mảng lịch sử
+    // vì câu hỏi này sẽ được truyền riêng qua tham số prompt của AI
+    const historyContext = history.slice(0, -1);
+
+    // 4. Kích hoạt gọi sang Adapter AI Service để nhận về luồng Stream thô
+    return await aiService.generateStreamResponse(
+      modelName,
+      prompt,
+      historyContext,
+    );
+  }
+  // BKAV HaiHS : hàm chuẩn bị ngữ cảnh và gọi AI qua aiService - end
+
+  // BKAV HaiHS : lưu câu trả lời của AI vào db - start
+  async saveAssistantMessage(conversationId, content, modelName) {
+    return await conversationRepository.createMessage({
+      role: "assistant",
+      content: content,
+      modelName: modelName,
+      conversationId: parseInt(conversationId),
+    });
+  }
+  // BKAV HaiHS : lưu câu trả lời của AI vào db - end
 }
 
 module.exports = new ConversationService();

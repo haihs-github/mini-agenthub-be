@@ -49,4 +49,13 @@ router.delete(
 );
 // BKAV HaiHS : API Xóa phòng chat của chính mình (CONV_D) - end
 
+// BKAV HaiHS : API Xử lý Chat - start
+router.post(
+  "/:id/chat",
+  authMiddleware,
+  permissionMiddleware("CHAT"),
+  conversationController.handleChat,
+);
+// BKAV HaiHS : API Xử lý Chat - end
+
 module.exports = router;

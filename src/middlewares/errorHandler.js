@@ -60,7 +60,7 @@ const errorHandler = (err, req, res, next) => {
       message: "Cuộc hội thoại không tồn tại hoặc bạn không có quyền truy cập!",
     });
   }
-
+  // lỗi không chứa ttle
   if (err.message === "TITLE_REQUIRED") {
     return res
       .status(400)

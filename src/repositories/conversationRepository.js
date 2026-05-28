@@ -68,6 +68,25 @@ class ConversationRepository {
     });
   }
   // BKAV HaiHS : Xóa phòng chat - end
+
+  // BKAV HaiHS : Hàm lưu trữ tin nhắn - start
+  async createMessage(messageData) {
+    return await prisma.message.create({
+      data: messageData,
+    });
+  }
+  // BKAV HaiHS : Hàm lưu trữ tin nhắn - end
+
+  // BKAV HaiHS : Hàm lấy lịch sử tin nhắn - start
+  async getMessages(conversationId) {
+    return await prisma.message.findMany({
+      where: {
+        conversationId: parseInt(conversationId),
+      },
+      orderBy: { createdAt: "asc" }, // Sắp xếp tin nhắn cũ trước, mới sau
+    });
+  }
+  // BKAV HaiHS : Hàm lấy lịch sử tin nhắn - end
 }
 
 module.exports = new ConversationRepository();
