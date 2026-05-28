@@ -64,6 +64,41 @@ class ConversationController {
     }
   }
   // 3. BKAV HaiHS : controller Lấy chi tiết khung chat - start
+
+  // BKAV HaiHS : controller Cập nhật tiêu đề phòng chat - start
+  async updateTitle(req, res, next) {
+    try {
+      const { id } = req.params; // Lấy ID phòng chat từ URL
+      const userId = req.userId; // Lấy danh tính từ Token
+      const { title } = req.body; // Lấy tiêu đề mới từ Body
+
+      await conversationService.updateConversationTitle(id, userId, title);
+
+      res.status(200).json({
+        message: "Cập nhật tiêu đề cuộc hội thoại thành công!",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : controller Cập nhật tiêu đề phòng chat - end
+
+  // BKAV HaiHS : controller Xóa phòng chat - start
+  async deleteConversation(req, res, next) {
+    try {
+      const { id } = req.params;
+      const userId = req.userId;
+
+      await conversationService.deleteConversation(id, userId);
+
+      res.status(200).json({
+        message: "Xóa cuộc hội thoại thành công!",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : controller Xóa phòng chat - end
 }
 
 module.exports = new ConversationController();

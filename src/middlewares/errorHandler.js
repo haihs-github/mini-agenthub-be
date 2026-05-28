@@ -56,12 +56,15 @@ const errorHandler = (err, req, res, next) => {
   }
   // lỗi không tìm thấy cuộc hội thoại hoặc không có quyền truy cập
   if (err.message === "CONVERSATION_NOT_FOUND") {
+    return res.status(404).json({
+      message: "Cuộc hội thoại không tồn tại hoặc bạn không có quyền truy cập!",
+    });
+  }
+
+  if (err.message === "TITLE_REQUIRED") {
     return res
-      .status(404)
-      .json({
-        message:
-          "Cuộc hội thoại không tồn tại hoặc bạn không có quyền truy cập!",
-      });
+      .status(400)
+      .json({ message: "Tiêu đề cuộc hội thoại không được để trống!" });
   }
 
   // Các lỗi còn lại

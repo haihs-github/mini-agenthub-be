@@ -31,4 +31,22 @@ router.get(
 );
 // BKAV HaiHS : API Lấy chi tiết phòng chat kèm tin nhắn cũ của chính mình (CONV_R) - start
 
+// BKAV HaiHS : API Cập nhật tiêu đề phòng chat của chính mình (CONV_U) - start
+router.put(
+  "/:id",
+  authMiddleware,
+  permissionMiddleware("CONV_U"),
+  conversationController.updateTitle,
+);
+// BKAV HaiHS : API Cập nhật tiêu đề phòng chat của chính mình (CONV_U) - end
+
+// BKAV HaiHS : API Xóa phòng chat của chính mình (CONV_D) - start
+router.delete(
+  "/:id",
+  authMiddleware,
+  permissionMiddleware("CONV_D"),
+  conversationController.deleteConversation,
+);
+// BKAV HaiHS : API Xóa phòng chat của chính mình (CONV_D) - end
+
 module.exports = router;

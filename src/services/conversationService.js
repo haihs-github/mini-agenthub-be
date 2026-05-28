@@ -42,6 +42,35 @@ class ConversationService {
     return conversation;
   }
   // BKAV HaiHS : Logic lấy chi tiết khung chat - end
+
+  // BKAV HaiHS : Logic cập nhật tiêu đề phòng chat - start
+  async updateConversationTitle(id, userId, title) {
+    if (!title || title.trim() === "") {
+      throw new Error("TITLE_REQUIRED");
+    }
+
+    const result = await conversationRepository.updateTitle(id, userId, title);
+
+    // Nếu không có bản ghi nào bị ảnh hưởng -> báo lỗi ngay
+    if (result.count === 0) {
+      throw new Error("CONVERSATION_NOT_FOUND");
+    }
+
+    return result;
+  }
+  // BKAV HaiHS : Logic cập nhật tiêu đề phòng chat - end
+
+  // BKAV HaiHS : Logic xóa phòng chat - start
+  async deleteConversation(id, userId) {
+    const result = await conversationRepository.delete(id, userId);
+
+    if (result.count === 0) {
+      throw new Error("CONVERSATION_NOT_FOUND");
+    }
+
+    return result;
+  }
+  // BKAV HaiHS : Logic xóa phòng chat - end
 }
 
 module.exports = new ConversationService();

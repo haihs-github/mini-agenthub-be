@@ -44,7 +44,30 @@ class ConversationRepository {
       },
     });
   }
+  // BKAV HaiHS : Lấy chi tiết phòng chat: BẮT BUỘC phải khớp cả ID phòng và ID người dùng - end
+
+  //   BKAV HaiHS : Cập nhật tiêu đề phòng chat - start
+  async updateTitle(id, userId, title) {
+    return await prisma.conversation.updateMany({
+      where: {
+        id: parseInt(id),
+        userId: parseInt(userId), // <--- Chỉ chính chủ mới được sửa
+      },
+      data: { title: title },
+    });
+  }
+  //   BKAV HaiHS : Cập nhật tiêu đề phòng chat - end
+
+  // BKAV HaiHS : Xóa phòng chat - start
+  async delete(id, userId) {
+    return await prisma.conversation.deleteMany({
+      where: {
+        id: parseInt(id),
+        userId: parseInt(userId), // <--- Chỉ chính chủ mới được xóa
+      },
+    });
+  }
+  // BKAV HaiHS : Xóa phòng chat - end
 }
-// BKAV HaiHS : Lấy chi tiết phòng chat: BẮT BUỘC phải khớp cả ID phòng và ID người dùng - end
 
 module.exports = new ConversationRepository();
