@@ -70,6 +70,60 @@ class UserService {
     };
   }
   // BKAV HaiHS : logic nghiệp vụ lấy danh sách phân trang - end
+
+  // BKAV HaiHS : lấy chi tiết người dùng - start
+  async getUserDetail(userId) {
+    // 1. Gọi Repo check DB lấy thông tin chi tiết
+    const user = await userRepository.findByIdDetailed(userId);
+
+    // 2. Nếu không tìm thấy, ném lỗi ra cho tầng errorHandler xử lý
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    return user;
+  }
+  // BKAV HaiHS : lấy chi tiết người dùng - end
+
+  // BKAV HaiHS : cập nhật người dùng - start
+  async updateUser(userId, email, fullname, groupIds) {
+    // 1. Kiểm tra xem user có tồn tại không
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    const updateData = {};
+
+    // 2. Logic kiểm tra chặn trùng Email
+    if (email && email !== user.email) {
+      const existingUser = await userRepository.findByEmail(email);
+      if (existingUser) {
+        throw new Error("EMAIL_ALREADY_EXISTS");
+      }
+      updateData.email = email;
+    }
+
+    // 3. Cập nhật họ tên (nếu truyền lên)
+    if (fullname !== undefined) {
+      updateData.fullname = fullname;
+    }
+
+    // 4. Logic cập nhật ghi đè danh sách Nhóm (Many-to-Many với 'set')
+    if (groupIds) {
+      if (!Array.isArray(groupIds)) {
+        throw new Error("GROUP_IDS_MUST_BE_ARRAY");
+      }
+      updateData.groups = {
+        // Xóa sạch liên kết cũ, nạp liên kết mới truyền lên
+        set: groupIds.map((id) => ({ id: parseInt(id) })),
+      };
+    }
+
+    // 5. Gọi Repo thực thi cập nhật xuống DB
+    return await userRepository.update(userId, updateData);
+  }
+  // BKAV HaiHS : cập nhật người dùng - end
 }
 
 module.exports = new UserService();

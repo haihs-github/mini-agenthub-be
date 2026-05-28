@@ -37,12 +37,22 @@ const errorHandler = (err, req, res, next) => {
 
   // lỗi khi thêm người dùng vào nhóm mà không cung cấp userIds hoặc userIds không phải là mảng
   if (err.message === "USER_IDS_REQUIRED") {
+    return res.status(400).json({
+      message: "Vui lòng cung cấp ít nhất một ID người dùng để thêm vào nhóm!",
+    });
+  }
+  // lỗi không tìm thấy người dùng
+  if (err.message === "USER_NOT_FOUND") {
     return res
-      .status(400)
-      .json({
-        message:
-          "Vui lòng cung cấp ít nhất một ID người dùng để thêm vào nhóm!",
-      });
+      .status(404)
+      .json({ message: "Không tìm thấy người dùng yêu cầu trên hệ thống!" });
+  }
+
+  // lỗi khi cập nhật người dùng mà groupIds không phải là mảng
+  if (err.message === "GROUP_IDS_MUST_BE_ARRAY") {
+    return res.status(400).json({
+      message: "Dữ liệu groupIds truyền lên phải ở dạng một mảng (Array)!",
+    });
   }
 
   // Các lỗi còn lại

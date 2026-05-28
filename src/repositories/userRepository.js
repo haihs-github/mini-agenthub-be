@@ -29,7 +29,7 @@ class UserRepository {
   // BKAV HaiHS : Tìm người dùng theo ID - start
   async findById(id) {
     return await prisma.user.findUnique({
-      where: { id: id },
+      where: { id: parseInt(id) },
     });
   }
   // BKAV HaiHS : Tìm người dùng theo ID - end
@@ -84,6 +84,49 @@ class UserRepository {
     return { users, total };
   }
   // BKAV HaiHS : tìm kiếm và phân trang người dùng - end
+
+  // BKAV HaiHS : lấy thông tin người dùng theo ID - start
+  async findByIdDetailed(id) {
+    return await prisma.user.findUnique({
+      where: { id: parseInt(id) }, // Ép kiểu về số nguyên Int
+      select: {
+        id: true,
+        email: true,
+        fullname: true,
+        permissions: true,
+        // Kéo thêm thông tin các nhóm của người dùng này
+        groups: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+  // BKAV HaiHS : lấy thông tin người dùng theo ID - end
+
+  // BKAV HaiHS : cập nhật thông tin người dùng - start
+  async update(id, updateData) {
+    return await prisma.user.update({
+      where: { id: parseInt(id) },
+      data: updateData,
+      // Trả ra thông tin sạch kèm danh sách Nhóm mới để Client kiểm tra
+      select: {
+        id: true,
+        email: true,
+        fullname: true,
+        permissions: true,
+        groups: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+  }
+  // BKAV HaiHS : cập nhật thông tin người dùng - end
 }
 
 module.exports = new UserRepository();

@@ -13,12 +13,31 @@ router.get(
 );
 // BKAV HaiHS : API lấy danh sách người dùng - end
 
-// API: Admin tạo User mới
+// BKAV HaiHS : API Admin tạo User mới - start
 router.post(
   "/create",
   authMiddleware,
   permissionMiddleware("USER_C"),
   userController.createUser,
 );
+// BKAV HaiHS : API Admin tạo User mới - end
+
+// BKAV HaiHS : API lấy chi tiết người dùng - start
+router.get(
+  "/:id",
+  authMiddleware,
+  permissionMiddleware("USER_R"),
+  userController.getUserDetail,
+);
+// BKAV HaiHS : API lấy chi tiết người dùng - end
+
+// BKAV HaiHS : API cập nhật người dùng - start
+router.put(
+  "/:id",
+  authMiddleware,
+  permissionMiddleware("USER_U"),
+  userController.updateUser,
+);
+// BKAV HaiHS : API cập nhật người dùng - start
 
 module.exports = router;
