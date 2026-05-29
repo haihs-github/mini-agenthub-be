@@ -1,5 +1,6 @@
 const Groq = require("groq-sdk");
 const axios = require("axios");
+const fs = require("fs");
 const { ProxyAgent, setGlobalDispatcher } = require("undici"); // <-- BÍ KÍP: Dùng undici cho Native Fetch
 
 // BKAV HaiHS : Cấu hình Proxy toàn cục nếu biến môi trường HTTP_PROXY tồn tại - start
@@ -39,24 +40,70 @@ class AiService {
 
   // BKAV HaiHS : Xử lý luồng Stream trực tiếp từ Groq SDK - start
   async getGroqStream(modelName, prompt, historyMessages) {
-    // 1. Chuyển đổi định dạng tin nhắn từ DB Prisma thành cấu trúc chuẩn của Groq API
-    const formattedMessages = historyMessages.map((msg) => ({
-      role: msg.role === "user" ? "user" : "assistant",
-      content: msg.content,
-    }));
+    // Hàm phụ trợ chuyển đổi file cục bộ thành chuỗi Data URI Base64 chuẩn API
+    const convertLocalFileToBase64 = (filePath, fileType) => {
+      const fileBuffer = fs.readFileSync(filePath);
+      return `data:${fileType};base64,${fileBuffer.toString("base64")}`;
+    };
 
-    // 2. Nạp câu hỏi hiện tại vào cuối mảng ngữ cảnh
-    formattedMessages.push({
-      role: "user",
-      content: prompt,
+    // 1. Chuyển đổi lịch sử chat cũ sang cấu trúc Groq (Hỗ trợ cả các tin nhắn cũ có chứa ảnh)
+    const formattedMessages = historyMessages.map((msg) => {
+      if (msg.attachments && msg.attachments.length > 0) {
+        const contentArray = [{ type: "text", text: msg.content }];
+        msg.attachments.forEach((att) => {
+          contentArray.push({
+            type: "image_url",
+            image_url: {
+              url: convertLocalFileToBase64(att.filePath, att.fileType),
+            },
+          });
+        });
+        return {
+          role: msg.role === "user" ? "user" : "assistant",
+          content: contentArray,
+        };
+      }
+      return {
+        role: msg.role === "user" ? "user" : "assistant",
+        content: msg.content,
+      };
     });
 
-    // 3. Kích hoạt gọi Groq với chế độ stream: true
+    // 2. Xử lý câu hỏi hiện tại: Nếu có đính kèm ảnh mới, đóng gói dạng Đa phương thức (Multimodal)
+    // Để lấy được ảnh của câu hỏi hiện tại, chúng ta sẽ lôi từ tin nhắn cuối cùng vừa nạp trong DB ra
+    const currentMessage = historyMessages[historyMessages.length - 1];
+
+    let currentContent;
+    if (
+      currentMessage &&
+      currentMessage.attachments &&
+      currentMessage.attachments.length > 0
+    ) {
+      currentContent = [{ type: "text", text: prompt }];
+      currentMessage.attachments.forEach((att) => {
+        currentContent.push({
+          type: "image_url",
+          image_url: {
+            url: convertLocalFileToBase64(att.filePath, att.fileType),
+          },
+        });
+      });
+    } else {
+      currentContent = prompt;
+    }
+
+    // 3. Đẩy câu hỏi hiện tại vào cuối mảng ngữ cảnh chat
+    formattedMessages.push({
+      role: "user",
+      content: currentContent,
+    });
+
+    // 4. Gọi API Groq với mô hình Vision
     return await groq.chat.completions.create({
       model: modelName,
       messages: formattedMessages,
-      stream: true, // Ép Groq nhả chữ theo thời gian thực
-      temperature: 0.7,
+      stream: true,
+      temperature: 0.5,
     });
   }
   // BKAV HaiHS : Xử lý luồng Stream trực tiếp từ Groq SDK - end

@@ -25,24 +25,35 @@ model Group {
   users       User[]   @relation("UserGroups")
 }
 
-// Bảng 3: Hội thoại (để quản lý chat)
+// Bảng 3: Hội thoại (Quản lý các phòng chat)
 model Conversation {
   id        Int       @id @default(autoincrement())
   title     String    @default("Cuộc hội thoại mới")
   userId    Int
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages  Message[]
+  messages  Message[] // Một cuộc hội thoại có nhiều tin nhắn
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 }
 
-// Bảng 4: tin nhắn để lưu tin nhắn yêu cầu của người dùng và phản hồi của AI 
+// Bảng 4: Tin nhắn (Lưu câu hỏi của User và phản hồi của AI)
 model Message {
   id             Int          @id @default(autoincrement())
-  role           String       // "user" (người dùng hỏi) hoặc "assistant" (AI trả lời)
+  role           String       // "user" hoặc "assistant"
   content        String       @db.Text
-  modelName      String?      // <--- DI CHUYỂN XUỐNG ĐÂY: Lưu chính xác model được dùng cho tin nhắn này
+  modelName      String?
   conversationId Int
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments    Attachment[] // Một tin nhắn có thể kèm nhiều ảnh/file
   createdAt      DateTime     @default(now())
+}
+
+// Bảng 5: File phương tiện đính kèm theo từng tin nhắn (Multimodal)
+model Attachment {
+  id        Int      @id @default(autoincrement())
+  filePath  String   // Đường dẫn lưu file trên server (ví dụ: uploads/abc.jpg)
+  fileType  String   // Định dạng file (ví dụ: image/jpeg, image/png)
+  messageId Int
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }

@@ -3,6 +3,7 @@ const router = express.Router();
 const conversationController = require("../controllers/conversationController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const permissionMiddleware = require("../middlewares/permissionMiddleware");
+const upload = require("../middlewares/uploadMiddleware");
 
 // BKAV HaiHS : API Tạo phòng chat mới (CONV_C) - start
 router.post(
@@ -54,6 +55,7 @@ router.post(
   "/:id/chat",
   authMiddleware,
   permissionMiddleware("CHAT"),
+  upload.array("images", 5),
   conversationController.handleChat,
 );
 // BKAV HaiHS : API Xử lý Chat - end

@@ -70,9 +70,15 @@ class ConversationRepository {
   // BKAV HaiHS : Xóa phòng chat - end
 
   // BKAV HaiHS : Hàm lưu trữ tin nhắn - start
-  async createMessage(messageData) {
+  async createMessage(messageData, attachments = []) {
     return await prisma.message.create({
-      data: messageData,
+      data: {
+        ...messageData,
+        attachments: {
+          create: attachments, // Mảng dạng: [{ filePath: '...', fileType: '...' }]
+        },
+      },
+      include: { attachments: true },
     });
   }
   // BKAV HaiHS : Hàm lưu trữ tin nhắn - end
@@ -80,10 +86,9 @@ class ConversationRepository {
   // BKAV HaiHS : Hàm lấy lịch sử tin nhắn - start
   async getMessages(conversationId) {
     return await prisma.message.findMany({
-      where: {
-        conversationId: parseInt(conversationId),
-      },
-      orderBy: { createdAt: "asc" }, // Sắp xếp tin nhắn cũ trước, mới sau
+      where: { conversationId: parseInt(conversationId) },
+      include: { attachments: true }, // <-- LẤY KÈM ẢNH ĐỂ LÀM NGỮ CẢNH AI
+      orderBy: { createdAt: "asc" },
     });
   }
   // BKAV HaiHS : Hàm lấy lịch sử tin nhắn - end

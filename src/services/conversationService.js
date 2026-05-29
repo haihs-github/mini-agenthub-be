@@ -73,8 +73,14 @@ class ConversationService {
   // BKAV HaiHS : Logic xóa phòng chat - end
 
   // BKAV HaiHS : hàm chuẩn bị ngữ cảnh và gọi AI qua aiService - start
-  async prepareChatStream(conversationId, userId, prompt, modelName) {
-    // 1. Kiểm tra nghiêm ngặt xem phòng chat có tồn tại và thuộc về đúng User này không
+  async prepareChatStream(
+    conversationId,
+    userId,
+    prompt,
+    modelName,
+    files = [],
+  ) {
+    // 1. Check chính chủ phòng chat
     const conversation = await conversationRepository.findByIdAndUser(
       conversationId,
       userId,
@@ -83,22 +89,28 @@ class ConversationService {
       throw new Error("CONVERSATION_NOT_FOUND");
     }
 
-    // 2. Lưu câu hỏi hiện tại của người dùng vào DB bảng Message
-    await conversationRepository.createMessage({
-      role: "user",
-      content: prompt,
-      modelName: modelName,
-      conversationId: parseInt(conversationId),
-    });
+    // 2. Chuẩn hóa cấu trúc mảng ảnh đính kèm để nạp xuống DB
+    const attachmentsData = files.map((file) => ({
+      filePath: file.path, // Đường dẫn file lưu trên server (uploads/...)
+      fileType: file.mimetype, // Định dạng ảnh (image/png...)
+    }));
 
-    // 3. Lấy toàn bộ lịch sử tin nhắn cũ để làm ngữ cảnh gửi cho AI
-    const history = await conversationRepository.getMessages(conversationId);
+    // 3. Lưu câu hỏi của User VÀ danh sách ảnh vào DB
+    await conversationRepository.createMessage(
+      {
+        role: "user",
+        content: prompt,
+        modelName: modelName,
+        conversationId: parseInt(conversationId),
+      },
+      attachmentsData,
+    );
 
-    // Loại bỏ tin nhắn cuối cùng (chính là câu hỏi vừa lưu) ra khỏi mảng lịch sử
-    // vì câu hỏi này sẽ được truyền riêng qua tham số prompt của AI
-    const historyContext = history.slice(0, -1);
+    // 4. Lấy toàn bộ lịch sử bao gồm cả tin nhắn vừa tạo để làm ngữ cảnh đầy đủ gửi sang AiService
+    const historyContext =
+      await conversationRepository.getMessages(conversationId);
 
-    // 4. Kích hoạt gọi sang Adapter AI Service để nhận về luồng Stream thô
+    // 5. Gọi sang tầng AI truyền đi
     return await aiService.generateStreamResponse(
       modelName,
       prompt,

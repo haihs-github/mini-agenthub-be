@@ -125,6 +125,7 @@ class ConversationController {
       const { id } = req.params; // ID phòng chat
       const userId = req.userId; // Danh tính người chat từ Token
       const { prompt, modelName } = req.body; // Câu hỏi và Model AI lựa chọn
+      const files = req.files || []; // Lấy danh sách các file ảnh vừa upload thành công
 
       if (!prompt || prompt.trim() === "") {
         return res
@@ -138,6 +139,7 @@ class ConversationController {
         userId,
         prompt,
         modelName,
+        files,
       );
 
       // 2. THIẾT LẬP HEADER CHUẨN SSE (Mở đường ống sống phát trực tiếp dữ liệu)
