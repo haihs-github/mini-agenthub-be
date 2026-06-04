@@ -30,7 +30,7 @@ class UserService {
     if (groupIds && Array.isArray(groupIds) && groupIds.length > 0) {
       userData.groups = {
         // Biến mảng số [1, 2] thành dạng [{ id: 1 }, { id: 2 }] để ném vào kết nối với Prisma
-        connect: groupIds.map((id) => ({ id: parseInt(id) })),
+        connect: groupIds.map((id) => ({ id: parseInt(id) })), // tạo ra bảng ngầm
       };
     }
 

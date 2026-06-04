@@ -74,6 +74,7 @@ class UserRepository {
             select: {
               id: true,
               name: true,
+              permissions: true,
             },
           },
         },
@@ -99,6 +100,7 @@ class UserRepository {
           select: {
             id: true,
             name: true,
+            permissions: true,
           },
         },
       },

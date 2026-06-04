@@ -100,26 +100,6 @@ class ConversationController {
   }
   // BKAV HaiHS : controller Xóa conversations - end
 
-  // BKAV HaiHS : hàm lưu trữ tin nhắn - start
-  async createMessage(messageData) {
-    return await prisma.message.create({
-      data: messageData,
-    });
-  }
-  // BKAV HaiHS : hàm lưu trữ tin nhắn - end
-
-  // BKAV HaiHS : hàm lấy lịch sử tin nhắn - start
-  async getMessages(conversationId) {
-    return await prisma.message.findMany({
-      where: {
-        conversationId: parseInt(conversationId),
-      },
-      orderBy: { createdAt: "asc" }, // Sắp xếp tin nhắn cũ trước, mới sau
-    });
-  }
-  // BKAV HaiHS : hàm lấy lịch sử tin nhắn - end
-
-  // BKAV HaiHS : controller Xử lý Chat - start
   async handleChat(req, res, next) {
     try {
       const { id } = req.params; // ID phòng chat
@@ -151,7 +131,7 @@ class ConversationController {
 
       // 3. PHÂN LUỒNG XỬ LÝ STREAM THEO NHÀ CUNG CẤP (Groq Async Iterable vs Flowise Readable Stream)
       if (modelName !== "flowise" && modelName) {
-        // --- KỊCH BẢN CHAT VỚI VŨ TRỤ GROQ ---
+        // --- KỊCH BẢN CHAT VỚI GROQ ---
         for await (const chunk of stream) {
           const content = chunk.choices[0]?.delta?.content || "";
           if (content) {
