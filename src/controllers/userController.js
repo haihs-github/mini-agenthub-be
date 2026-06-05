@@ -114,6 +114,28 @@ class UserController {
     }
   }
   // BKAV HaiHS : xóa người dùng - end
+
+  // BKAV HaiHS : tìm kiếm và phân trang người dùng - start
+  async searchUsers(req, res, next) {
+    try {
+      let { keyword, page, limit } = req.query;
+
+      // Ép kiểu phân trang về số nguyên, gán mặc định nếu thiếu
+      page = parseInt(page) || 1;
+      limit = parseInt(limit) || 10;
+
+      const result = await userService.searchUsers(keyword, page, limit);
+
+      res.status(200).json({
+        message: "Tìm kiếm người dùng thành công!",
+        data: result.users,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : tìm kiếm và phân trang người dùng - end
 }
 
 module.exports = new UserController();

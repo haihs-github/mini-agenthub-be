@@ -137,6 +137,42 @@ class UserRepository {
     });
   }
   // BKAV HaiHS : xóa người dùng - start
+
+  // BKAV HaiHS : tìm kiếm người dùng theo từ khóa với phân trang - start
+  async searchAndCount({ keyword, skip, take }) {
+    // Định nghĩa bộ lọc tìm kiếm chung cho cả lệnh SELECT và lệnh COUNT
+    const whereClause = {
+      OR: [
+        { fullname: { contains: keyword, mode: "insensitive" } },
+        { email: { contains: keyword, mode: "insensitive" } },
+      ],
+    };
+
+    // Chạy song song 2 câu lệnh bằng Promise.all để tối ưu I/O Database
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where: whereClause,
+        skip: skip,
+        take: take,
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          email: true,
+          fullname: true,
+          permissions: true,
+          groups: {
+            select: { id: true, name: true },
+          },
+        },
+      }),
+      prisma.user.count({
+        where: whereClause,
+      }),
+    ]);
+
+    return { users, total };
+  }
+  // BKAV HaiHS : tìm kiếm người dùng theo từ khóa với phân trang - end
 }
 
 module.exports = new UserRepository();

@@ -22,6 +22,15 @@ router.post(
 );
 // BKAV HaiHS : API Admin tạo User mới - end
 
+// BKAV HaiHS : API tìm kiếm người dùng - start
+router.get(
+  "/search",
+  authMiddleware,
+  permissionMiddleware("USER_R"),
+  userController.searchUsers,
+);
+// BKAV HaiHS : API tìm kiếm người dùng - end
+
 // BKAV HaiHS : API lấy chi tiết người dùng - start
 router.get(
   "/:id",
