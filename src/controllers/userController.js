@@ -120,7 +120,7 @@ class UserController {
     try {
       let { keyword, page, limit } = req.query;
 
-      // Ép kiểu phân trang về số nguyên, gán mặc định nếu thiếu
+      // FIXME: [tienpv]: Thiếu kiểm tra giới hạn dưới của phân trang (page < 1, limit < 1), tương tự như các controller khác, cần validate trước khi truyền xuống service.
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 

@@ -38,6 +38,7 @@ class UserService {
     const newUser = await userRepository.create(userData);
 
     // Gửi Email thông báo
+    // TODO: [tienpv]: Gửi email đồng bộ sau khi tạo user không an toàn. Nếu gửi email lỗi, user vẫn được tạo nhưng API trả về 500, dẫn đến email bị kẹt không tạo lại được. Nên dùng job queue hoặc transaction.
     await emailService.sendWelcomeEmail(email, tempPassword);
 
     // Không trả về password trong kết quả
@@ -164,6 +165,7 @@ class UserService {
   }
 
   // BKAV HaiHS : tìm kiếm và phân trang người dùng - start
+  // FIXME: [tienpv]: Hàm searchUsers bị định nghĩa trùng lặp 2 lần liên tiếp.
   async searchUsers(keyword, page, limit) {
     const skip = (page - 1) * limit;
     const take = limit;

@@ -26,6 +26,7 @@ class ConversationController {
       const userId = req.userId; // Cứ lấy từ Token ra dùng, an toàn tuyệt đối
       let { page, limit } = req.query;
 
+      // FIXME: [tienpv]: Thiếu kiểm tra giới hạn dưới của phân trang (page < 1, limit < 1)
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 
@@ -163,6 +164,7 @@ class ConversationController {
         });
 
         // Khi luồng Stream của Flowise chảy xong hoàn toàn
+        // FIXME: [tienpv]: Thiếu catch error trong callback event stream.on("end"). Nếu saveAssistantMessage thất bại, nó sẽ gây crash ứng dụng do Unhandled Promise Rejection.
         stream.on("end", async () => {
           // Lưu câu trả lời của Agent vào DB
           await conversationService.saveAssistantMessage(

@@ -2,6 +2,7 @@
 const errorHandler = (err, req, res, next) => {
   console.error("Lỗi hệ thống:", err.message);
 
+  // TODO: [tienpv]: Việc kiểm tra lỗi bằng cách so sánh chuỗi err.message ("USER_NOT_FOUND", "WRONG_PASSWORD",...) rất dễ bị lỗi và khó bảo trì. Nên sử dụng Custom AppError kế thừa từ Error hoặc mã lỗi (Error Codes) chuẩn hóa.
   // Phân loại lỗi từ Service để trả về mã status phù hợp
   if (err.message === "USER_NOT_FOUND" || err.message === "WRONG_PASSWORD") {
     return res
