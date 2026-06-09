@@ -137,33 +137,6 @@ class UserService {
     // 2. Tiến hành gọi Repo để xóa thẳng tay khỏi hệ thống
     return await userRepository.delete(userId);
   }
-  // BKAV HaiHS : xóa người dùng - end
-  async searchUsers(keyword, page, limit) {
-    const skip = (page - 1) * limit;
-    const take = limit;
-
-    // Nếu không truyền từ khóa, mặc định sẽ là chuỗi rỗng "" (Prisma sẽ lấy tất cả)
-    const cleanKeyword = keyword ? keyword.trim() : "";
-
-    const { users, total } = await userRepository.searchAndCount({
-      keyword: cleanKeyword,
-      skip,
-      take,
-    });
-
-    const totalPages = Math.ceil(total / limit);
-
-    return {
-      users,
-      pagination: {
-        totalItems: total,
-        totalPages,
-        currentPage: page,
-        limit,
-      },
-    };
-  }
-
   // BKAV HaiHS : tìm kiếm và phân trang người dùng - start
   // FIXME: [tienpv]: Hàm searchUsers bị định nghĩa trùng lặp 2 lần liên tiếp.
   async searchUsers(keyword, page, limit) {

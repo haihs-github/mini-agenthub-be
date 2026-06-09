@@ -4,21 +4,27 @@ class GroupController {
   // BKAV HaiHS : Xử lý tạo nhóm mới - start
   async createGroup(req, res, next) {
     try {
-      // Lấy thêm userIds từ Body do Client gửi lên
-      const { name, permissions, userIds } = req.body;
+      // Lấy và chuẩn hóa dữ liệu chuỗi ngay tại Controller
+      const name = req.body.name?.trim();
+      const { permissions } = req.body;
+      let userIds = req.body.userIds;
 
-      // Kiểm tra dữ liệu đầu vào bắt buộc
+      // VALIDATE: Kiểm tra dữ liệu bắt buộc
       if (!name) {
         return res
           .status(400)
           .json({ message: "Bắt buộc phải nhập tên Nhóm (name)!" });
       }
 
-      // Kiểm tra định dạng dữ liệu userIds nếu admin có truyền lên
-      if (userIds && !Array.isArray(userIds)) {
-        return res.status(400).json({
-          message: "Dữ liệu userIds truyền lên bắt buộc phải là một mảng!",
-        });
+      // VALIDATE & ÉP KIỂU: Xử lý mảng userIds đầu vào sạch sẽ
+      if (userIds) {
+        if (!Array.isArray(userIds)) {
+          return res.status(400).json({
+            message: "Dữ liệu userIds truyền lên bắt buộc phải là một mảng!",
+          });
+        }
+        // Ép toàn bộ phần tử trong mảng về số nguyên Int để Service chỉ xử lý dữ liệu chuẩn
+        userIds = userIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
       }
 
       // Đẩy việc xuống tầng Service
@@ -32,23 +38,30 @@ class GroupController {
       next(error);
     }
   }
-  // BKAV HaiHS : Xử lý tao nhóm mới - end
+  // BKAV HaiHS : Xử lý tạo nhóm mới - end
 
   //   BKAV HaiHS : xử lý cập nhật cho nhóm - start
   async updateGroup(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID nhóm từ URL
-      const { name, permissions } = req.body; // Lấy cả name và permissions từ Body
+      const groupId = parseInt(req.params.id);
+      const name = req.body.name?.trim();
+      const { permissions } = req.body;
 
-      // Gọi Service xử lý logic nghiệp vụ nặng đầu
-      const result = await groupService.updateGroup(id, name, permissions);
+      // VALIDATE: Chặn ngay nếu ID trên URL không phải là số hợp lệ
+      if (isNaN(groupId)) {
+        return res
+          .status(400)
+          .json({ message: "ID nhóm phải là một số nguyên hợp lệ!" });
+      }
+
+      const result = await groupService.updateGroup(groupId, name, permissions);
 
       res.status(200).json({
         message: "Cập nhật thông tin Nhóm thành công!",
         data: result,
       });
     } catch (error) {
-      next(error); // Đẩy lỗi ra errorHandler
+      next(error);
     }
   }
   //   BKAV HaiHS : xử lý cập nhật cho nhóm - end
@@ -56,25 +69,32 @@ class GroupController {
   // BKAV HaiHS : xử lý thêm người dùng vào nhóm - start
   async addUsers(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID Nhóm từ URL
-      const { userIds } = req.body; // Lấy mảng ID người dùng từ Body
+      const groupId = parseInt(req.params.id);
+      let userIds = req.body.userIds;
 
-      // Kiểm tra dữ liệu đầu vào bắt buộc phải là mảng
+      if (isNaN(groupId)) {
+        return res
+          .status(400)
+          .json({ message: "ID nhóm phải là một số nguyên hợp lệ!" });
+      }
+
       if (!userIds || !Array.isArray(userIds)) {
         return res.status(400).json({
           message: "Dữ liệu userIds truyền lên bắt buộc phải là một mảng!",
         });
       }
 
-      // Gọi Service xử lý
-      const result = await groupService.addUsersToGroup(id, userIds);
+      // Ép kiểu sạch mảng đầu vào trước khi giao cho Service
+      userIds = userIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
+
+      const result = await groupService.addUsersToGroup(groupId, userIds);
 
       res.status(200).json({
         message: "Thêm các thành viên vào Nhóm thành công!",
         data: result,
       });
     } catch (error) {
-      next(error); // Gửi lỗi sang errorHandler gánh
+      next(error);
     }
   }
   // BKAV HaiHS : xử lý thêm người dùng vào nhóm - end
@@ -82,16 +102,21 @@ class GroupController {
   // BKAV HaiHS : xử lý xóa nhóm - start
   async deleteGroup(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID nhóm cần xóa từ URL
+      const groupId = parseInt(req.params.id);
 
-      // Giao việc cho Service xử lý logic nghiệp vụ
-      await groupService.deleteGroup(id);
+      if (isNaN(groupId)) {
+        return res
+          .status(400)
+          .json({ message: "ID nhóm phải là một số nguyên hợp lệ!" });
+      }
+
+      await groupService.deleteGroup(groupId);
 
       res.status(200).json({
         message: "Xóa Nhóm thành công!",
       });
     } catch (error) {
-      next(error); // Đẩy lỗi ra errorHandler
+      next(error);
     }
   }
   // BKAV HaiHS : xử lý xóa nhóm - end
@@ -99,51 +124,54 @@ class GroupController {
   // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
   async removeUsers(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID Nhóm từ URL
-      const { userIds } = req.body; // Lấy mảng ID người dùng cần xóa từ Body
+      const groupId = parseInt(req.params.id);
+      let userIds = req.body.userIds;
 
-      // Kiểm tra dữ liệu đầu vào bắt buộc phải là mảng
+      if (isNaN(groupId)) {
+        return res
+          .status(400)
+          .json({ message: "ID nhóm phải là một số nguyên hợp lệ!" });
+      }
+
       if (!userIds || !Array.isArray(userIds)) {
         return res.status(400).json({
           message: "Dữ liệu userIds truyền lên bắt buộc phải là một mảng!",
         });
       }
 
-      // Đẩy việc xuống tầng Service xử lý
-      const result = await groupService.removeUsersFromGroup(id, userIds);
+      userIds = userIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
+
+      const result = await groupService.removeUsersFromGroup(groupId, userIds);
 
       res.status(200).json({
         message: "Xóa các thành viên khỏi Nhóm thành công!",
         data: result,
       });
     } catch (error) {
-      next(error); // Gửi lỗi sang errorHandler
+      next(error);
     }
   }
-  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
+  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - Tuyệt đối sạch rác
 
   // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - start
   async getAllGroups(req, res, next) {
     try {
-      // Lấy tham số từ URL dạng: /api/groups?page=1&limit=5
       let { page, limit } = req.query;
 
-      // Ép kiểu về số nguyên, nếu không truyền hoặc truyền sai thì lấy mặc định (Trang 1, mỗi trang 10 phần tử)
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 
-      // Chặn trường hợp người dùng cố tình truyền số âm
+      // Chốt chặn chặt chẽ giới hạn phân trang đầu vào
       if (page < 1) page = 1;
       if (limit < 1) limit = 10;
+      if (limit > 100) limit = 100; // Bảo vệ hệ thống khỏi bão càn quét dữ liệu lớn
 
-      // Bàn giao cho tầng Service xử lý tính toán
       const result = await groupService.getAllGroups(page, limit);
 
-      // Trả kết quả chuẩn RESTful
       res.status(200).json({
         message: "Lấy danh sách Nhóm thành công!",
         data: result.groups,
-        pagination: result.pagination, // Gửi kèm thông tin phân trang cho Frontend vẽ nút bấm
+        pagination: result.pagination,
       });
     } catch (error) {
       next(error);
@@ -154,18 +182,22 @@ class GroupController {
   // BKAV HaiHS : xử lý lấy chi tiết thông tin nhóm - start
   async getGroupDetail(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID nhóm từ URL (ví dụ: /api/groups/1)
+      const groupId = parseInt(req.params.id);
 
-      // Đẩy việc xuống tầng Service
-      const result = await groupService.getGroupDetail(id);
+      if (isNaN(groupId)) {
+        return res
+          .status(400)
+          .json({ message: "ID nhóm phải là một số nguyên hợp lệ!" });
+      }
 
-      // Trả kết quả thành công cho Client
+      const result = await groupService.getGroupDetail(groupId);
+
       res.status(200).json({
         message: "Lấy chi tiết thông tin Nhóm thành công!",
         data: result,
       });
     } catch (error) {
-      next(error); // Nếu có lỗi (ví dụ: GROUP_NOT_FOUND), đẩy ra errorHandler xử lý
+      next(error);
     }
   }
   // BKAV HaiHS : xử lý lấy chi tiết thông tin nhóm - end

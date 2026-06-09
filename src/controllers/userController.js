@@ -4,13 +4,37 @@ class UserController {
   // BKAV HaiHS : tạo người dùng mới - start
   async createUser(req, res, next) {
     try {
-      const { email, fullname, groupIds } = req.body;
+      // Lấy và chuẩn hóa dữ liệu chuỗi ngay tại Controller
+      const email = req.body.email?.trim();
+      const fullname = req.body.fullname?.trim();
+      let groupIds = req.body.groupIds;
 
+      // VALIDATE: Kiểm tra các trường bắt buộc
       if (!email) {
         return res.status(400).json({ message: "Bắt buộc phải nhập Email!" });
       }
 
-      // Giao việc cho Service
+      // VALIDATE: Kiểm tra định dạng cấu trúc Email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res
+          .status(400)
+          .json({ message: "Định dạng Email không hợp lệ!" });
+      }
+
+      // VALIDATE & ÉP KIỂU: Xử lý mảng groupIds đầu vào nếu có
+      if (groupIds) {
+        if (!Array.isArray(groupIds)) {
+          return res.status(400).json({
+            message: "Dữ liệu groupIds truyền lên bắt buộc phải là một mảng!",
+          });
+        }
+        groupIds = groupIds
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id));
+      }
+
+      // Giao việc cho Service với dữ liệu đầu vào đã chuẩn hóa 100%
       const result = await userService.createUserByAdmin(
         email,
         fullname,
@@ -30,20 +54,17 @@ class UserController {
   // BKAV HaiHS : lấy danh sách người dùng phân trang - start
   async getAllUsers(req, res, next) {
     try {
-      // Lấy tham số dạng: /api/users?page=1&limit=10
       let { page, limit } = req.query;
 
-      // Ép kiểu về số nguyên và set mặc định
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 
+      // Chốt chặn nghiêm ngặt giới hạn phân trang bảo vệ Database
       if (page < 1) page = 1;
       if (limit < 1) limit = 10;
 
-      // Gọi Service làm việc
       const result = await userService.getAllUsers(page, limit);
 
-      // Trả response
       res.status(200).json({
         message: "Lấy danh sách người dùng thành công!",
         data: result.users,
@@ -58,18 +79,23 @@ class UserController {
   // BKAV HaiHS : lấy chi tiết người dùng - start
   async getUserDetail(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID từ URL (ví dụ: /api/users/2 thì id = 2)
+      // Ép kiểu ID từ URL về số nguyên nguyên bản ngay tại Controller
+      const userId = parseInt(req.params.id);
 
-      // Giao việc cho tầng Service xử lý
-      const result = await userService.getUserDetail(id);
+      if (isNaN(userId)) {
+        return res
+          .status(400)
+          .json({ message: "ID người dùng phải là một số nguyên hợp lệ!" });
+      }
 
-      // Trả kết quả chuẩn RESTful
+      const result = await userService.getUserDetail(userId);
+
       res.status(200).json({
         message: "Lấy thông tin chi tiết người dùng thành công!",
         data: result,
       });
     } catch (error) {
-      next(error); // Đẩy lỗi ra middleware errorHandler gánh
+      next(error);
     }
   }
   // BKAV HaiHS : lấy chi tiết người dùng - end
@@ -77,12 +103,40 @@ class UserController {
   // BKAV HaiHS : cập nhật người dùng - start
   async updateUser(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID người dùng cần sửa từ URL
-      const { email, fullname, groupIds } = req.body; // Lấy dữ liệu sửa từ Body
+      const userId = parseInt(req.params.id);
+      const email = req.body.email?.trim();
+      const fullname = req.body.fullname?.trim();
+      let groupIds = req.body.groupIds;
 
-      // Gọi tầng Service xử lý
+      if (isNaN(userId)) {
+        return res
+          .status(400)
+          .json({ message: "ID người dùng phải là một số nguyên hợp lệ!" });
+      }
+
+      // Kiểm tra định dạng Email nếu người dùng có truyền lên để cập nhật
+      if (email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return res
+            .status(400)
+            .json({ message: "Định dạng Email mới không hợp lệ!" });
+        }
+      }
+
+      if (groupIds) {
+        if (!Array.isArray(groupIds)) {
+          return res.status(400).json({
+            message: "Dữ liệu groupIds truyền lên bắt buộc phải là một mảng!",
+          });
+        }
+        groupIds = groupIds
+          .map((id) => parseInt(id))
+          .filter((id) => !isNaN(id));
+      }
+
       const result = await userService.updateUser(
-        id,
+        userId,
         email,
         fullname,
         groupIds,
@@ -93,7 +147,7 @@ class UserController {
         data: result,
       });
     } catch (error) {
-      next(error); // Đẩy lỗi ra errorHandler gánh
+      next(error);
     }
   }
   // BKAV HaiHS : cập nhật người dùng - end
@@ -101,16 +155,21 @@ class UserController {
   // BKAV HaiHS : xóa người dùng - start
   async deleteUser(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID người dùng cần xóa từ URL
+      const userId = parseInt(req.params.id);
 
-      // Gọi tầng Service xử lý logic
-      await userService.deleteUser(id);
+      if (isNaN(userId)) {
+        return res
+          .status(400)
+          .json({ message: "ID người dùng phải là một số nguyên hợp lệ!" });
+      }
+
+      await userService.deleteUser(userId);
 
       res.status(200).json({
         message: "Xóa tài khoản người dùng thành công!",
       });
     } catch (error) {
-      next(error); // Gửi lỗi sang errorHandler xử lý tập trung
+      next(error);
     }
   }
   // BKAV HaiHS : xóa người dùng - end
@@ -118,11 +177,16 @@ class UserController {
   // BKAV HaiHS : tìm kiếm và phân trang người dùng - start
   async searchUsers(req, res, next) {
     try {
-      let { keyword, page, limit } = req.query;
+      const keyword = req.query.keyword?.trim() || "";
+      let { page, limit } = req.query;
 
-      // FIXME: [tienpv]: Thiếu kiểm tra giới hạn dưới của phân trang (page < 1, limit < 1), tương tự như các controller khác, cần validate trước khi truyền xuống service.
+      // ĐÃ SỬA [tienpv]: Bổ sung kiểm tra giới hạn dưới và giới hạn trên phân trang cho API Search
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
+
+      if (page < 1) page = 1;
+      if (limit < 1) limit = 10;
+      if (limit > 100) limit = 100;
 
       const result = await userService.searchUsers(keyword, page, limit);
 

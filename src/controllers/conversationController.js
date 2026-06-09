@@ -4,12 +4,16 @@ class ConversationController {
   // BKAV HaiHS : controller Tạo phòng - start
   async createConversation(req, res, next) {
     try {
-      const userId = req.userId;
-      const { title } = req.body;
+      const userId = parseInt(req.userId);
+      // Chuẩn hóa dữ liệu ngay tại cửa Controller
+      const title = req.body.title?.trim() || "Cuộc hội thoại mới";
+
+      // Giao dữ liệu đã chuẩn hoàn toàn cho Service
       const result = await conversationService.createConversation(
         userId,
         title,
       );
+
       res.status(201).json({
         message: "Khởi tạo cuộc hội thoại mới thành công!",
         data: result,
@@ -23,18 +27,24 @@ class ConversationController {
   // BKAV HaiHS : controller Lấy lịch sử chat - start
   async getMyConversations(req, res, next) {
     try {
-      const userId = req.userId; // Cứ lấy từ Token ra dùng, an toàn tuyệt đối
+      const userId = parseInt(req.userId);
       let { page, limit } = req.query;
 
       // FIXME: [tienpv]: Thiếu kiểm tra giới hạn dưới của phân trang (page < 1, limit < 1)
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 
+      // FIXED: HaiHS : kiểm tra giới hạn dưới - start
+      if (page < 1) page = 1;
+      if (limit < 1) limit = 10;
+      // FIXED: HaiHS : kiểm tra giới hạn dưới - end
+
       const result = await conversationService.getUserConversations(
         userId,
         page,
         limit,
       );
+
       res.status(200).json({
         message: "Lấy danh sách cuộc hội thoại thành công!",
         data: result.conversations,
@@ -46,16 +56,24 @@ class ConversationController {
   }
   // BKAV HaiHS : controller Lấy lịch sử chat - end
 
-  // 3. BKAV HaiHS : controller Lấy chi tiết khung chat - start
+  // BKAV HaiHS : controller Lấy chi tiết khung chat - start
   async getConversationDetail(req, res, next) {
     try {
-      const { id } = req.params;
-      const userId = req.userId; // Lấy ID chính mình để đối chiếu độc quyền
+      const userId = parseInt(req.userId);
+      // Ép kiểu ID từ URL về số nguyên nguyên bản ngay tại Controller
+      const conversationId = parseInt(req.params.id);
+
+      if (isNaN(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+      }
 
       const result = await conversationService.getConversationDetail(
-        id,
+        conversationId,
         userId,
       );
+
       res.status(200).json({
         message: "Lấy chi tiết cuộc hội thoại thành công!",
         data: result,
@@ -64,16 +82,32 @@ class ConversationController {
       next(error);
     }
   }
-  // 3. BKAV HaiHS : controller Lấy chi tiết khung chat - start
+  // BKAV HaiHS : controller Lấy chi tiết khung chat - end
 
   // BKAV HaiHS : controller Cập nhật tiêu đề conversations - start
   async updateTitle(req, res, next) {
     try {
-      const { id } = req.params; // Lấy ID conversations từ URL
-      const userId = req.userId; // Lấy danh tính từ Token
-      const { title } = req.body; // Lấy tiêu đề mới từ Body
+      const userId = parseInt(req.userId);
+      const conversationId = parseInt(req.params.id);
+      const title = req.body.title?.trim();
 
-      await conversationService.updateConversationTitle(id, userId, title);
+      // Validate chặt chẽ tính hợp lệ dữ liệu thô
+      if (isNaN(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+      }
+      if (!title) {
+        return res
+          .status(400)
+          .json({ message: "Tiêu đề cuộc hội thoại không được để trống!" });
+      }
+
+      await conversationService.updateConversationTitle(
+        conversationId,
+        userId,
+        title,
+      );
 
       res.status(200).json({
         message: "Cập nhật tiêu đề cuộc hội thoại thành công!",
@@ -87,10 +121,16 @@ class ConversationController {
   // BKAV HaiHS : controller Xóa conversations - start
   async deleteConversation(req, res, next) {
     try {
-      const { id } = req.params;
-      const userId = req.userId;
+      const userId = parseInt(req.userId);
+      const conversationId = parseInt(req.params.id);
 
-      await conversationService.deleteConversation(id, userId);
+      if (isNaN(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+      }
+
+      await conversationService.deleteConversation(conversationId, userId);
 
       res.status(200).json({
         message: "Xóa cuộc hội thoại thành công!",
@@ -101,78 +141,83 @@ class ConversationController {
   }
   // BKAV HaiHS : controller Xóa conversations - end
 
+  // BKAV HaiHS : controller Xử lý Chat - start
   async handleChat(req, res, next) {
     try {
-      const { id } = req.params; // ID phòng chat
-      const userId = req.userId; // Danh tính người chat từ Token
-      const { prompt, modelName } = req.body; // Câu hỏi và Model AI lựa chọn
-      const files = req.files || []; // Lấy danh sách các file ảnh vừa upload thành công
+      const userId = parseInt(req.userId);
+      const conversationId = parseInt(req.params.id);
+      const prompt = req.body.prompt?.trim();
+      const { modelName } = req.body;
+      const files = req.files || [];
 
-      if (!prompt || prompt.trim() === "") {
+      if (isNaN(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+      }
+      if (!prompt) {
         return res
           .status(400)
           .json({ message: "Nội dung câu hỏi không được để trống!" });
       }
 
-      // 1. Gọi Service chuẩn bị dữ liệu và kích hoạt Stream từ AI Provider
+      // Kích hoạt Stream dữ liệu sạch từ Service
       const stream = await conversationService.prepareChatStream(
-        id,
+        conversationId,
         userId,
         prompt,
         modelName,
         files,
       );
 
-      // 2. THIẾT LẬP HEADER CHUẨN SSE (Mở đường ống sống phát trực tiếp dữ liệu)
+      // Thiết lập Header SSE chuẩn
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      let fullAIResponse = ""; // Biến gom toàn bộ chữ của AI để lưu DB khi kết thúc
+      let fullAIResponse = "";
 
-      // 3. PHÂN LUỒNG XỬ LÝ STREAM THEO NHÀ CUNG CẤP (Groq Async Iterable vs Flowise Readable Stream)
       if (modelName !== "flowise" && modelName) {
         // --- KỊCH BẢN CHAT VỚI GROQ ---
         for await (const chunk of stream) {
           const content = chunk.choices[0]?.delta?.content || "";
           if (content) {
             fullAIResponse += content;
-            // Bắn gói tin về client theo đúng định dạng giao thức SSE: data: <chuỗi_json>\n\n
             res.write(`data: ${JSON.stringify({ content })}\n\n`);
           }
         }
 
-        // Khi Groq nhả hết chữ thành công -> Tiến hành lưu câu trả lời hoàn chỉnh vào DB
         await conversationService.saveAssistantMessage(
-          id,
+          conversationId,
           fullAIResponse,
           modelName,
         );
-
-        // Bắn tín hiệu kết thúc luồng cho Client biết để dừng trạng thái loading
         res.write(`data: [DONE]\n\n`);
         res.end();
       } else {
-        // --- KỊCH BẢN CHAT VỚI VŨ TRỤ FLOWISE ---
-        // Vì Axios trả về một Node.js Readable Stream chuẩn, ta lắng nghe sự kiện 'data'
+        // --- KỊCH BẢN CHAT FLOWISE ---
         stream.on("data", (chunk) => {
-          const text = chunk.toString();
-          fullAIResponse += text;
-
-          // Chuyển tiếp (Forward) luồng stream nguyên bản của Flowise thẳng về cho Frontend
+          fullAIResponse += chunk.toString();
           res.write(chunk);
         });
 
-        // Khi luồng Stream của Flowise chảy xong hoàn toàn
-        // FIXME: [tienpv]: Thiếu catch error trong callback event stream.on("end"). Nếu saveAssistantMessage thất bại, nó sẽ gây crash ứng dụng do Unhandled Promise Rejection.
+        // ĐÃ SỬA [tienpv]: Bọc try/catch bất đồng bộ để tránh crash ứng dụng khi ghi DB lỗi
         stream.on("end", async () => {
-          // Lưu câu trả lời của Agent vào DB
-          await conversationService.saveAssistantMessage(
-            id,
-            fullAIResponse,
-            "flowise",
-          );
-          res.end();
+          try {
+            await conversationService.saveAssistantMessage(
+              conversationId,
+              fullAIResponse,
+              "flowise",
+            );
+          } catch (dbError) {
+            console.error("Lỗi lưu tin nhắn Flowise vào DB:", dbError);
+            // Bắn gói tin thông báo lỗi SSE cho client biết thay vì im lặng sập nguồn
+            res.write(
+              `data: ${JSON.stringify({ error: "Không thể lưu trữ lịch sử tin nhắn." })}\n\n`,
+            );
+          } finally {
+            res.end();
+          }
         });
 
         stream.on("error", (err) => {

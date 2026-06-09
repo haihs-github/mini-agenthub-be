@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 class AuthService {
   // BKAV HaiHS : xử lý đăng nhập - start
   async login(email, password) {
-    // 1. Gọi Repo để lấy dữ liệu từ DB
+    // Gọi Repo để lấy dữ liệu từ DB
     const user = await userRepository.findByEmail(email);
 
     // Nếu không có user, ném lỗi ra ngoài (Controller sẽ bắt)
@@ -13,19 +13,19 @@ class AuthService {
       throw new Error("USER_NOT_FOUND");
     }
 
-    // 2. So sánh mật khẩu
+    // So sánh mật khẩu
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new Error("WRONG_PASSWORD");
     }
 
-    // 3. Tính toán logic nghiệp vụ: Hợp nhất quyền hạn
+    // Tính toán logic nghiệp vụ: Hợp nhất quyền hạn
     const groupPerms = user.groups
       ? user.groups.flatMap((g) => g.permissions)
       : [];
     const allPermissions = [...new Set([...user.permissions, ...groupPerms])];
 
-    // 4. Ký Token (Trong thực tế nhớ để JWT_SECRET trong file .env)
+    // Ký Token (Trong thực tế nhớ để JWT_SECRET trong file .env)
     const SECRET_KEY = process.env.JWT_SECRET || "Sieu_Mat_Ma_Cua_Toi_123";
     const token = jwt.sign(
       { id: user.id, email: user.email, permissions: allPermissions },
@@ -43,22 +43,22 @@ class AuthService {
 
   // BKAV HaiHS : xử lý đổi mật khẩu - start
   async changePassword(userId, oldPassword, newPassword) {
-    // 1. Tìm thông tin user hiện tại trong DB
+    // Tìm thông tin user hiện tại trong DB
     const user = await userRepository.findById(userId);
     if (!user) {
       throw new Error("USER_NOT_FOUND");
     }
 
-    // 2. Kiểm tra xem mật khẩu cũ (hoặc mật khẩu tạm thời) nhập vào có đúng không
+    // Kiểm tra xem mật khẩu cũ (hoặc mật khẩu tạm thời) nhập vào có đúng không
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
       throw new Error("WRONG_OLD_PASSWORD");
     }
 
-    // 3. Mã hóa mật khẩu mới
+    // Mã hóa mật khẩu mới
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
 
-    // 4. Gọi Repo để lưu mật khẩu mới vào DB
+    // Gọi Repo để lưu mật khẩu mới vào DB
     await userRepository.updatePassword(userId, hashedNewPassword);
 
     return true;

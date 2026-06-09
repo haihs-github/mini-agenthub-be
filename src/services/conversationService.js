@@ -1,11 +1,13 @@
 const conversationRepository = require("../repositories/conversationRepository");
 const aiService = require("./aiService");
+
 class ConversationService {
   // BKAV HaiHS : Logic tạo phòng - start
   async createConversation(userId, title) {
+    // Tầng Controller đã bảo đảm userId là Int và title đã được trim + gán mặc định
     const conversationData = {
-      userId: parseInt(userId),
-      title: title || "Cuộc hội thoại mới",
+      userId,
+      title,
     };
     return await conversationRepository.create(conversationData);
   }
@@ -13,6 +15,7 @@ class ConversationService {
 
   // BKAV HaiHS : Logic lấy danh sách Lịch sử đoạn chat - start
   async getUserConversations(userId, page, limit) {
+    // page và limit đã được Controller đảm bảo lớn hơn hoặc bằng 1
     const skip = (page - 1) * limit;
     const take = limit;
 
@@ -34,7 +37,7 @@ class ConversationService {
       userId,
     );
 
-    // Nếu phòng không tồn tại HOẶC của người khác, Repo trả về null -> Báo lỗi ngay
+    // KIỂM TRA NGHIỆP VỤ: Xác minh trạng thái tồn tại của tài nguyên dưới Database
     if (!conversation) {
       throw new Error("CONVERSATION_NOT_FOUND");
     }
@@ -45,13 +48,10 @@ class ConversationService {
 
   // BKAV HaiHS : Logic cập nhật tiêu đề phòng chat - start
   async updateConversationTitle(id, userId, title) {
-    if (!title || title.trim() === "") {
-      throw new Error("TITLE_REQUIRED");
-    }
-
+    // Bỏ qua hoàn toàn bước check trống và trim() vì Controller đã làm sạch từ trước
     const result = await conversationRepository.updateTitle(id, userId, title);
 
-    // Nếu không có bản ghi nào bị ảnh hưởng -> báo lỗi ngay
+    // KIỂM TRA NGHIỆP VỤ: Nếu count bằng 0 nghĩa là sai ID phòng hoặc người dùng cố tình can thiệp phòng người khác
     if (result.count === 0) {
       throw new Error("CONVERSATION_NOT_FOUND");
     }
@@ -80,7 +80,7 @@ class ConversationService {
     modelName,
     files = [],
   ) {
-    // 1. Check chính chủ phòng chat
+    // Kiểm tra quyền sở hữu phòng chat (Logic nghiệp vụ gác cổng tài nguyên)
     const conversation = await conversationRepository.findByIdAndUser(
       conversationId,
       userId,
@@ -89,28 +89,28 @@ class ConversationService {
       throw new Error("CONVERSATION_NOT_FOUND");
     }
 
-    // 2. Chuẩn hóa cấu trúc mảng ảnh đính kèm để nạp xuống DB
+    // Chuyển đổi cấu trúc dữ liệu file mảng của Multer thành cấu trúc lưu trữ của schema DB
     const attachmentsData = files.map((file) => ({
-      filePath: file.path, // Đường dẫn file lưu trên server (uploads/...)
-      fileType: file.mimetype, // Định dạng ảnh (image/png...)
+      filePath: file.path,
+      fileType: file.mimetype,
     }));
 
-    // 3. Lưu câu hỏi của User VÀ danh sách ảnh vào DB
+    // Ra lệnh cho Repository thực thi ghi nhận tin nhắn mới
     await conversationRepository.createMessage(
       {
         role: "user",
         content: prompt,
         modelName: modelName,
-        conversationId: parseInt(conversationId),
+        conversationId, // Đã là số nguyên chuẩn từ Controller
       },
       attachmentsData,
     );
 
-    // 4. Lấy toàn bộ lịch sử bao gồm cả tin nhắn vừa tạo để làm ngữ cảnh đầy đủ gửi sang AiService
+    // Thu thập toàn bộ lịch sử hội thoại để làm ngữ cảnh truyền đi
     const historyContext =
       await conversationRepository.getMessages(conversationId);
 
-    // 5. Gọi sang tầng AI truyền đi
+    // Bàn giao cho tầng dịch vụ AI xử lý kết nối máy chủ
     return await aiService.generateStreamResponse(
       modelName,
       prompt,
@@ -125,7 +125,7 @@ class ConversationService {
       role: "assistant",
       content: content,
       modelName: modelName,
-      conversationId: parseInt(conversationId),
+      conversationId,
     });
   }
   // BKAV HaiHS : lưu câu trả lời của AI vào db - end

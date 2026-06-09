@@ -11,10 +11,6 @@ class EmailService {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
-      tls: {
-        // FIXME: [tienpv]: Bỏ qua việc kiểm tra chứng chỉ SSL (rejectUnauthorized: false) trong production là lỗ hổng bảo mật nghiêm trọng (Man-in-the-Middle).
-        rejectUnauthorized: false, // Bỏ qua lỗi chứng chỉ
-      },
       family: 4, // Ép IPv4
       connectionTimeout: 10000,
       greetingTimeout: 10000,

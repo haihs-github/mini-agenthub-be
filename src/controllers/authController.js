@@ -14,6 +14,13 @@ class AuthController {
           .json({ message: "Vui lòng nhập đầy đủ Email và Mật khẩu" });
       }
 
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res
+          .status(400)
+          .json({ message: "Định dạng Email không hợp lệ!" });
+      }
+
       // 2. Giao việc cho Service
       const result = await authService.login(email, password);
 
@@ -40,8 +47,14 @@ class AuthController {
           message: "Vui lòng nhập đầy đủ mật khẩu cũ và mật khẩu mới!",
         });
       }
+      // kiểm tra mật khẩu cũ trùng với mật khẩu mới
+      if (oldPassword === newPassword) {
+        return res.status(400).json({
+          message: "Mật khẩu mới không được trùng với mật khẩu cũ!",
+        });
+      }
 
-      // Giao việc cho Service xử lý nặng não
+      // Giao việc cho Service xử lý
       await authService.changePassword(userId, oldPassword, newPassword);
 
       res.status(200).json({
