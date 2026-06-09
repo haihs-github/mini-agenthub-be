@@ -1,78 +1,25 @@
-// BKAV HaiHS : Middleware xử lý lỗi - start
+// BKAV HaiHS : Middleware xử lý lỗi tập trung đạt chuẩn Enterprise - start
 const errorHandler = (err, req, res, next) => {
-  console.error("Lỗi hệ thống:", err.message);
-
-  // TODO: [tienpv]: Việc kiểm tra lỗi bằng cách so sánh chuỗi err.message ("USER_NOT_FOUND", "WRONG_PASSWORD",...) rất dễ bị lỗi và khó bảo trì. Nên sử dụng Custom AppError kế thừa từ Error hoặc mã lỗi (Error Codes) chuẩn hóa.
-  // Phân loại lỗi từ Service để trả về mã status phù hợp
-  if (err.message === "USER_NOT_FOUND" || err.message === "WRONG_PASSWORD") {
-    return res
-      .status(401)
-      .json({ message: "Email hoặc mật khẩu không chính xác!" });
-  }
-
-  // lỗi trùng email khi tạo user mới
-  if (err.message === "EMAIL_ALREADY_EXISTS") {
-    return res
-      .status(409)
-      .json({ message: "Email này đã tồn tại trong hệ thống!" });
-  }
-
-  // lỗi sai mật khẩu cũ khi đổi mật khẩu
-  if (err.message === "WRONG_OLD_PASSWORD") {
-    return res.status(400).json({ message: "Mật khẩu cũ không chính xác!" });
-  }
-
-  // Lỗi trùng tên nhóm khi tạo nhóm mới
-  if (err.message === "GROUP_ALREADY_EXISTS") {
-    return res
-      .status(409)
-      .json({ message: "Tên nhóm này đã tồn tại trên hệ thống!" });
-  }
-
-  // lỗi không tìm thấy nhóm khi cập nhật quyền cho nhóm
-  if (err.message === "GROUP_NOT_FOUND") {
-    return res
-      .status(404)
-      .json({ message: "Không tìm thấy Nhóm yêu cầu trên hệ thống!" });
-  }
-
-  // lỗi khi thêm người dùng vào nhóm mà không cung cấp userIds hoặc userIds không phải là mảng
-  if (err.message === "USER_IDS_REQUIRED") {
-    return res.status(400).json({
-      message: "Vui lòng cung cấp ít nhất một ID người dùng để thêm vào nhóm!",
+  //Lỗi Operational công khai (Lỗi do mình chủ động tạo ra ở tầng Service/Controller)
+  if (err.isOperational) {
+    return res.status(err.statusCode).json({
+      status: "fail",
+      code: err.errorCode, // Mã lỗi định danh (Frontend rất thích điều này để rẽ nhánh UI)
+      message: err.message, // Message sạch, thân thiện với người dùng
     });
   }
-  // lỗi không tìm thấy người dùng
-  if (err.message === "USER_NOT_FOUND") {
-    return res
-      .status(404)
-      .json({ message: "Không tìm thấy người dùng yêu cầu trên hệ thống!" });
-  }
 
-  // lỗi khi cập nhật người dùng mà groupIds không phải là mảng
-  if (err.message === "GROUP_IDS_MUST_BE_ARRAY") {
-    return res.status(400).json({
-      message: "Dữ liệu groupIds truyền lên phải ở dạng một mảng (Array)!",
-    });
-  }
-  // lỗi không tìm thấy cuộc hội thoại hoặc không có quyền truy cập
-  if (err.message === "CONVERSATION_NOT_FOUND") {
-    return res.status(404).json({
-      message: "Cuộc hội thoại không tồn tại hoặc bạn không có quyền truy cập!",
-    });
-  }
-  // lỗi không chứa ttle
-  if (err.message === "TITLE_REQUIRED") {
-    return res
-      .status(400)
-      .json({ message: "Tiêu đề cuộc hội thoại không được để trống!" });
-  }
+  // Lỗi Hệ thống ẩn danh (Lỗi 500, lỗi sập DB, crash luồng, lỗi cú pháp thư viện bên thứ 3)
+  // Log toàn bộ Stack Trace chi tiết ra Console
+  console.error("LỖI HỆ THỐNG NGHIÊM TRỌNG (500):", err);
 
-  // Các lỗi còn lại
-  return res
-    .status(500)
-    .json({ message: "Lỗi hệ thống nội bộ", error: err.message });
+  // GIẤU BIỆT thông tin chi tiết lỗi với Client để bảo mật (Tránh rò rỉ cấu trúc DB hoặc logic nội bộ)
+  return res.status(500).json({
+    status: "error",
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Hệ thống đang gặp sự cố, vui lòng thử lại sau ít phút!",
+  });
 };
-// BKAV HaiHS : Middleware xử lý lỗi - end
+// BKAV HaiHS : Middleware xử lý lỗi tập trung - end
 
 module.exports = errorHandler;

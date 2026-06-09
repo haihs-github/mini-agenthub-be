@@ -1,6 +1,8 @@
 const userRepository = require("../repositories/userRepository");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const AppError = require("../utils/appError");
+const ERROR = require("../constants/errorCodes");
 
 class AuthService {
   // BKAV HaiHS : xử lý đăng nhập - start
@@ -10,13 +12,13 @@ class AuthService {
 
     // Nếu không có user, ném lỗi ra ngoài (Controller sẽ bắt)
     if (!user) {
-      throw new Error("USER_NOT_FOUND");
+      throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
     // So sánh mật khẩu
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      throw new Error("WRONG_PASSWORD");
+      throw new AppError(ERROR.AUTH.INVALID_CREDENTIALS);
     }
 
     // Tính toán logic nghiệp vụ: Hợp nhất quyền hạn
@@ -46,13 +48,13 @@ class AuthService {
     // Tìm thông tin user hiện tại trong DB
     const user = await userRepository.findById(userId);
     if (!user) {
-      throw new Error("USER_NOT_FOUND");
+      throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
     // Kiểm tra xem mật khẩu cũ (hoặc mật khẩu tạm thời) nhập vào có đúng không
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
-      throw new Error("WRONG_OLD_PASSWORD");
+      throw new AppError(ERROR.AUTH.WRONG_OLD_PASSWORD);
     }
 
     // Mã hóa mật khẩu mới

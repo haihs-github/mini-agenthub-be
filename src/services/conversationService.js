@@ -1,4 +1,6 @@
 const conversationRepository = require("../repositories/conversationRepository");
+const AppError = require("../utils/appError");
+const ERROR = require("../constants/errorCodes");
 const aiService = require("./aiService");
 
 class ConversationService {
@@ -39,7 +41,7 @@ class ConversationService {
 
     // KIỂM TRA NGHIỆP VỤ: Xác minh trạng thái tồn tại của tài nguyên dưới Database
     if (!conversation) {
-      throw new Error("CONVERSATION_NOT_FOUND");
+      throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
     }
 
     return conversation;
@@ -48,12 +50,11 @@ class ConversationService {
 
   // BKAV HaiHS : Logic cập nhật tiêu đề phòng chat - start
   async updateConversationTitle(id, userId, title) {
-    // Bỏ qua hoàn toàn bước check trống và trim() vì Controller đã làm sạch từ trước
     const result = await conversationRepository.updateTitle(id, userId, title);
 
     // KIỂM TRA NGHIỆP VỤ: Nếu count bằng 0 nghĩa là sai ID phòng hoặc người dùng cố tình can thiệp phòng người khác
     if (result.count === 0) {
-      throw new Error("CONVERSATION_NOT_FOUND");
+      throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
     }
 
     return result;
@@ -65,7 +66,7 @@ class ConversationService {
     const result = await conversationRepository.delete(id, userId);
 
     if (result.count === 0) {
-      throw new Error("CONVERSATION_NOT_FOUND");
+      throw new AppError("CONVERSATION_NOT_FOUND");
     }
 
     return result;
@@ -86,7 +87,7 @@ class ConversationService {
       userId,
     );
     if (!conversation) {
-      throw new Error("CONVERSATION_NOT_FOUND");
+      throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
     }
 
     // Chuyển đổi cấu trúc dữ liệu file mảng của Multer thành cấu trúc lưu trữ của schema DB

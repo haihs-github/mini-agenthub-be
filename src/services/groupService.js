@@ -1,12 +1,13 @@
 const groupRepository = require("../repositories/groupRepository");
-
+const AppError = require("../utils/appError");
+const ERROR = require("../constants/errorCodes");
 class GroupService {
   // BKAV HaiHS : xử lý tạo nhóm mới - start
   async createGroup(name, permissions = [], userIds = []) {
     // 1. KIỂM TRA NGHIỆP VỤ: Tên nhóm là duy nhất dưới DB
     const existingGroup = await groupRepository.findByName(name);
     if (existingGroup) {
-      throw new Error("GROUP_ALREADY_EXISTS");
+      throw new AppError(ERROR.GROUP.ALREADY_EXISTS);
     }
 
     const groupData = {
@@ -31,7 +32,7 @@ class GroupService {
     // 1. KIỂM TRA NGHIỆP VỤ: Nhóm phải tồn tại thật trong hệ thống
     const group = await groupRepository.findById(groupId);
     if (!group) {
-      throw new Error("GROUP_NOT_FOUND");
+      throw new AppError(ERROR.GROUP.NOT_FOUND);
     }
 
     const updateData = {};
@@ -40,7 +41,7 @@ class GroupService {
     if (name && name !== group.name) {
       const existingGroup = await groupRepository.findByName(name);
       if (existingGroup) {
-        throw new Error("GROUP_ALREADY_EXISTS");
+        throw new AppError(ERROR.GROUP.ALREADY_EXISTS);
       }
       updateData.name = name;
     }
@@ -58,7 +59,7 @@ class GroupService {
   async addUsersToGroup(groupId, userIds) {
     const group = await groupRepository.findById(groupId);
     if (!group) {
-      throw new Error("GROUP_NOT_FOUND");
+      throw new AppError(ERROR.GROUP.ALREADY_EXISTS);
     }
 
     // Bỏ check trống mảng vì Controller đã chặn từ xa
@@ -70,7 +71,7 @@ class GroupService {
   async deleteGroup(groupId) {
     const group = await groupRepository.findById(groupId);
     if (!group) {
-      throw new Error("GROUP_NOT_FOUND");
+      throw new AppError(ERROR.GROUP.NOT_FOUND);
     }
 
     return await groupRepository.delete(groupId);
@@ -81,7 +82,7 @@ class GroupService {
   async removeUsersFromGroup(groupId, userIds) {
     const group = await groupRepository.findById(groupId);
     if (!group) {
-      throw new Error("GROUP_NOT_FOUND");
+      throw new AppError(ERROR.GROUP.NOT_FOUND);
     }
 
     return await groupRepository.removeUsersFromGroup(groupId, userIds);
@@ -118,7 +119,7 @@ class GroupService {
   async getGroupDetail(groupId) {
     const group = await groupRepository.findByIdWithUsers(groupId);
     if (!group) {
-      throw new Error("GROUP_NOT_FOUND");
+      throw new AppError(ERROR.GROUP.NOT_FOUND);
     }
 
     return group;

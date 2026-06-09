@@ -2,14 +2,15 @@ const userRepository = require("../repositories/userRepository");
 const emailService = require("./emailService");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto"); // Thư viện có sẵn của Node.js để tạo chuỗi ngẫu nhiên
-
+const AppError = require("../utils/appError");
+const ERROR = require("../constants/errorCodes");
 class UserService {
   // BKAV HaiHS : tạo người dùng mới - start
   async createUserByAdmin(email, fullname, groupIds) {
     // Kiểm tra email đã tồn tại chưa
     const existingUser = await userRepository.findByEmail(email);
     if (existingUser) {
-      throw new Error("EMAIL_ALREADY_EXISTS");
+      throw new AppError(ERROR.USER.EMAIL_EXISTS);
     }
 
     //  Sinh mật khẩu ngẫu nhiên (8 ký tự)
@@ -38,7 +39,7 @@ class UserService {
     const newUser = await userRepository.create(userData);
 
     // Gửi Email thông báo
-    // TODO: [tienpv]: Gửi email đồng bộ sau khi tạo user không an toàn. Nếu gửi email lỗi, user vẫn được tạo nhưng API trả về 500, dẫn đến email bị kẹt không tạo lại được. Nên dùng job queue hoặc transaction.
+    // TODO: [tienpv]: Gửi email đồng bộ sau khi tạo user không an toàn Nếu gửi email lỗi, user vẫn được tạo nhưng API trả về 500, dẫn đến email bị kẹt không tạo lại đượn Nên dùng job queue hoặc transaction.
     await emailService.sendWelcomeEmail(email, tempPassword);
 
     // Không trả về password trong kết quả
@@ -49,17 +50,17 @@ class UserService {
 
   // BKAV HaiHS : logic nghiệp vụ lấy danh sách phân trang - start
   async getAllUsers(page, limit) {
-    // 1. Tính toán vị trí skip và take
+    // n Tính toán vị trí skip và take
     const skip = (page - 1) * limit;
     const take = limit;
 
-    // 2. Gọi Repo lấy dữ liệu sạch từ DB
+    // n Gọi Repo lấy dữ liệu sạch từ DB
     const { users, total } = await userRepository.findAndCountAll(skip, take);
 
-    // 3. Tính toán tổng số trang
+    // n Tính toán tổng số trang
     const totalPages = Math.ceil(total / limit);
 
-    // 4. Trả về kết quả
+    // n Trả về kết quả
     return {
       users,
       pagination: {
@@ -74,12 +75,12 @@ class UserService {
 
   // BKAV HaiHS : lấy chi tiết người dùng - start
   async getUserDetail(userId) {
-    // 1. Gọi Repo check DB lấy thông tin chi tiết
+    // n Gọi Repo check DB lấy thông tin chi tiết
     const user = await userRepository.findByIdDetailed(userId);
 
-    // 2. Nếu không tìm thấy, ném lỗi ra cho tầng errorHandler xử lý
+    // n Nếu không tìm thấy, ném lỗi ra cho tầng errorHandler xử lý
     if (!user) {
-      throw new Error("USER_NOT_FOUND");
+      throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
     return user;
@@ -88,53 +89,50 @@ class UserService {
 
   // BKAV HaiHS : cập nhật người dùng - start
   async updateUser(userId, email, fullname, groupIds) {
-    // 1. Kiểm tra xem user có tồn tại không
+    // n Kiểm tra xem user có tồn tại không
     const user = await userRepository.findById(userId);
     if (!user) {
-      throw new Error("USER_NOT_FOUND");
+      throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
     const updateData = {};
 
-    // 2. Logic kiểm tra chặn trùng Email
+    // n Logic kiểm tra chặn trùng Email
     if (email && email !== user.email) {
       const existingUser = await userRepository.findByEmail(email);
       if (existingUser) {
-        throw new Error("EMAIL_ALREADY_EXISTS");
+        throw new AppError(ERROR.USER.EMAIL_EXISTS);
       }
       updateData.email = email;
     }
 
-    // 3. Cập nhật họ tên (nếu truyền lên)
+    // n Cập nhật họ tên (nếu truyền lên)
     if (fullname !== undefined) {
       updateData.fullname = fullname;
     }
 
-    // 4. Logic cập nhật ghi đè danh sách Nhóm (Many-to-Many với 'set')
+    // n Logic cập nhật ghi đè danh sách Nhóm (Many-to-Many với 'set')
     if (groupIds) {
-      if (!Array.isArray(groupIds)) {
-        throw new Error("GROUP_IDS_MUST_BE_ARRAY");
-      }
       updateData.groups = {
         // Xóa sạch liên kết cũ, nạp liên kết mới truyền lên
         set: groupIds.map((id) => ({ id: parseInt(id) })),
       };
     }
 
-    // 5. Gọi Repo thực thi cập nhật xuống DB
+    // n Gọi Repo thực thi cập nhật xuống DB
     return await userRepository.update(userId, updateData);
   }
   // BKAV HaiHS : cập nhật người dùng - end
 
   // BKAV HaiHS : xóa người dùng - start
   async deleteUser(userId) {
-    // 1. Kiểm tra xem người dùng có tồn tại trong DB không
+    // n Kiểm tra xem người dùng có tồn tại trong DB không
     const user = await userRepository.findById(userId);
     if (!user) {
-      throw new Error("USER_NOT_FOUND");
+      throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
-    // 2. Tiến hành gọi Repo để xóa thẳng tay khỏi hệ thống
+    // n Tiến hành gọi Repo để xóa thẳng tay khỏi hệ thống
     return await userRepository.delete(userId);
   }
   // BKAV HaiHS : tìm kiếm và phân trang người dùng - start
