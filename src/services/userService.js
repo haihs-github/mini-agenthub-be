@@ -16,6 +16,7 @@ class UserService {
 
     // Sinh mật khẩu ngẫu nhiên (8 ký tự hex)
     const tempPassword = crypto.randomBytes(4).toString("hex");
+    console.log("tempPassword:" + tempPassword); // dungf khi dev
 
     // Mã hóa mật khẩu bảo mật
     const hashedPassword = await bcrypt.hash(tempPassword, 10);
