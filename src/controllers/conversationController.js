@@ -60,8 +60,12 @@ class ConversationController {
   async getConversationDetail(req, res, next) {
     try {
       const userId = parseInt(req.userId);
-      // Ép kiểu ID từ URL về số nguyên nguyên bản ngay tại Controller
       const conversationId = parseInt(req.params.id);
+
+      // Đón nhận các param phân trang cho tin nhắn bên trong khung chat
+      let { page, limit } = req.query;
+      page = parseInt(page) || 1;
+      limit = parseInt(limit) || 20; // Mặc định hiển thị 20 tin nhắn gần nhất mỗi lần load
 
       if (isNaN(conversationId)) {
         return res
@@ -69,14 +73,25 @@ class ConversationController {
           .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
       }
 
+      if (page < 1) page = 1;
+      if (limit < 1) limit = 20;
+
+      // Truyền đầy đủ bộ tham số xuống tầng Service
       const result = await conversationService.getConversationDetail(
         conversationId,
         userId,
+        page,
+        limit,
       );
 
       res.status(200).json({
-        message: "Lấy chi tiết cuộc hội thoại thành công!",
+        message: "Lấy chi tiết cuộc hội thoại và lịch sử tin nhắn thành công!",
         data: result,
+        // Gửi kèm trạng thái phân trang tin nhắn hiện tại để FE biết đường gọi tiếp khi User cuộn chuột lên top
+        pagination: {
+          currentPage: page,
+          limit: limit,
+        },
       });
     } catch (error) {
       next(error);

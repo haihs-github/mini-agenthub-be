@@ -33,16 +33,24 @@ class ConversationService {
   // BKAV HaiHS : Logic lấy danh sách Lịch sử đoạn chat - end
 
   // BKAV HaiHS : Logic lấy chi tiết khung chat - start
-  async getConversationDetail(id, userId) {
+  async getConversationDetail(id, userId, page, limit) {
+    const skip = (page - 1) * limit;
+    const take = limit;
+
     const conversation = await conversationRepository.findByIdAndUser(
       id,
       userId,
+      skip,
+      take,
     );
 
-    // KIỂM TRA NGHIỆP VỤ: Xác minh trạng thái tồn tại của tài nguyên dưới Database
     if (!conversation) {
       throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
     }
+
+    // Vì DB trả về dạng tin nhắn mới nhất đứng đầu (do phục vụ phân trang),
+    // ta đảo ngược lại mảng để tin nhắn cũ ở trên, tin nhắn mới ở dưới chuẩn giao diện chat
+    conversation.messages.reverse();
 
     return conversation;
   }

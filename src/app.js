@@ -5,12 +5,14 @@ const userRoutes = require("./routes/userRoutes");
 const groupRoutes = require("./routes/groupRoutes");
 const conversationRoutes = require("./routes/conversationRoutes");
 const errorHandler = require("./middlewares/errorHandler");
+const path = require("path");
 
 const app = express();
 
 // Middleware cấu hình chung
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 // Gắn các Routes
 app.use("/api/auth", authRoutes);

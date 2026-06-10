@@ -1,14 +1,11 @@
 const Groq = require("groq-sdk");
 const axios = require("axios");
 const fs = require("fs");
-const { ProxyAgent, setGlobalDispatcher } = require("undici"); // <-- BÍ KÍP: Dùng undici cho Native Fetch
+const { ProxyAgent, setGlobalDispatcher } = require("undici");
 
 // BKAV HaiHS : Cấu hình Proxy toàn cục nếu biến môi trường HTTP_PROXY tồn tại - start
 if (process.env.HTTP_PROXY) {
-  // Tạo một Agent Proxy theo chuẩn undici để bọc lấy hàm fetch
   const proxyAgent = new ProxyAgent({ uri: process.env.HTTP_PROXY });
-
-  // Ép toàn bộ các lệnh gọi native fetch trong hệ thống phải đi qua đường ống này
   setGlobalDispatcher(proxyAgent);
 }
 // BKAV HaiHS : Cấu hình Proxy toàn cục nếu biến môi trường HTTP_PROXY tồn tại - end
@@ -28,19 +25,16 @@ class AiService {
    */
   // BKAV HaiHS : Hàm quyết định gọi Stream từ Flowise hay Groq dựa trên modelName - start
   async generateStreamResponse(modelName, prompt, historyMessages) {
-    // KỊCH BẢN 1: Người dùng lựa chọn chạy qua Agent của Flowise
     if (modelName === "flowise" || !modelName) {
       return await this.getFlowiseStream(prompt, historyMessages);
     }
 
-    // KỊCH BẢN 2: Người dùng gọi trực tiếp các LLM thuần tốc độ cao của Groq
     return await this.getGroqStream(modelName, prompt, historyMessages);
   }
   // BKAV HaiHS : Hàm quyết định gọi Stream từ Flowise hay Groq dựa trên modelName - end
 
   // BKAV HaiHS : Xử lý luồng Stream trực tiếp từ Groq SDK - start
   async getGroqStream(modelName, prompt, historyMessages) {
-    // Hàm phụ trợ chuyển đổi file cục bộ thành chuỗi Data URI Base64 chuẩn API
     const convertLocalFileToBase64 = (filePath, fileType) => {
       const fileBuffer = fs.readFileSync(filePath);
       return `data:${fileType};base64,${fileBuffer.toString("base64")}`;
@@ -70,7 +64,6 @@ class AiService {
     });
 
     // 2. Xử lý câu hỏi hiện tại: Nếu có đính kèm ảnh mới, đóng gói dạng Đa phương thức (Multimodal)
-    // Để lấy được ảnh của câu hỏi hiện tại, chúng ta sẽ lôi từ tin nhắn cuối cùng vừa nạp trong DB ra
     const currentMessage = historyMessages[historyMessages.length - 1];
 
     let currentContent;
@@ -98,7 +91,32 @@ class AiService {
       content: currentContent,
     });
 
-    // 4. Gọi API Groq với mô hình Vision
+    // BKAV HaiHS: Bộ lọc quét ngược mảng cấu trúc từ mới nhất về cũ nhất để ép khống chế tối đa 5 ảnh
+    const maxAllowedImages = 5;
+    let totalDetectedImages = 0;
+
+    for (let i = formattedMessages.length - 1; i >= 0; i--) {
+      if (Array.isArray(formattedMessages[i].content)) {
+        const optimizedContent = [];
+
+        // Quét ngược các phần tử content bên trong tin nhắn hiện tại để ưu tiên ảnh mới hơn
+        for (let j = formattedMessages[i].content.length - 1; j >= 0; j--) {
+          const contentItem = formattedMessages[i].content[j];
+
+          if (contentItem.type === "image_url") {
+            if (totalDetectedImages < maxAllowedImages) {
+              totalDetectedImages++;
+              optimizedContent.unshift(contentItem);
+            }
+          } else {
+            optimizedContent.unshift(contentItem);
+          }
+        }
+        formattedMessages[i].content = optimizedContent;
+      }
+    }
+
+    // 4. Gọi API Groq với mô hình Vision bảo đảm payload an toàn không bao giờ vượt quá 5 ảnh
     return await groq.chat.completions.create({
       model: modelName,
       messages: formattedMessages,
@@ -110,13 +128,11 @@ class AiService {
 
   // BKAV HaiHS : Xử lý luồng Stream bằng cách bắn request sang Server Flowise - start
   async getFlowiseStream(prompt, historyMessages) {
-    // 1. Định dạng lịch sử chat theo chuẩn Flowise
     const chatHistory = historyMessages.map((msg) => ({
       role: msg.role === "user" ? "userMessage" : "apiMessage",
       message: msg.content,
     }));
 
-    // 2. Bắn Request sang Flowise sử dụng Axios với cấu hình nhận luồng dữ liệu thô (stream)
     const response = await axios.post(
       process.env.FLOWISE_API_URL,
       {

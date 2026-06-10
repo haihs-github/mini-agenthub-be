@@ -30,16 +30,21 @@ class ConversationRepository {
   // BKAV HaiHS : Lấy danh sách phòng chat của RIÊNG user này (Có phân trang) - end
 
   // BKAV HaiHS : Lấy chi tiết phòng chat: BẮT BUỘC phải khớp cả ID phòng và ID người dùng - start
-  async findByIdAndUser(id, userId) {
+  async findByIdAndUser(id, userId, skip, take) {
     return await prisma.conversation.findFirst({
       where: {
         id: parseInt(id),
-        userId: parseInt(userId), // <--- CHỐT CHẶN: Thằng khác mò ID phòng cũng bằng thừa!
+        userId: parseInt(userId),
       },
-      // Kéo luôn lịch sử tin nhắn cũ thuộc phòng này lên để đổ ra khung chat
+      // BÍ KÍP: Cấu hình include lồng nhau (Deep Include) của Prisma
       include: {
         messages: {
-          orderBy: { createdAt: "asc" }, // Tin nhắn cũ ở trên, mới ở dưới
+          skip: skip,
+          take: take,
+          orderBy: { createdAt: "desc" }, // Lấy các tin nhắn mới nhất lùi dần về quá khứ
+          include: {
+            attachments: true, // <--- CHỐT CHẶN: Kéo sạch danh sách ảnh đính kèm của tin nhắn này lên
+          },
         },
       },
     });
