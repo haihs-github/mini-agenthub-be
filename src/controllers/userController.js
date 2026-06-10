@@ -200,6 +200,44 @@ class UserController {
     }
   }
   // BKAV HaiHS : tìm kiếm và phân trang người dùng - end
+
+  // BKAV HaiHS : Tự cập nhật thông tin cá nhân (phone, address) - start
+  async updateMyProfile(req, res, next) {
+    try {
+      const userId = parseInt(req.userId);
+      const phone = req.body.phone?.trim();
+      const address = req.body.address?.trim();
+
+      // 1. VALIDATE: Nếu người dùng có truyền số điện thoại, bắt buộc phải đúng định dạng
+      if (phone) {
+        const phoneRegex = /^\d{10}$/; // Chỉ chứa số và có đúng 10 ký tự
+        if (!phoneRegex.test(phone)) {
+          return res.status(400).json({
+            message:
+              "Số điện thoại không hợp lệ! Bản chất phải chứa đúng 10 chữ số.",
+          });
+        }
+      }
+
+      // 2. Giao việc cho Service xử lý với dữ liệu đã được nén sạch
+      const result = await userService.updateMyProfile(userId, {
+        phone,
+        address,
+      });
+
+      // 3. Trả về Token mới để Frontend cập nhật lại trạng thái đăng nhập
+      res.status(200).json({
+        message: "Cập nhật thông tin cá nhân thành công!",
+        data: {
+          token: result.token,
+          user: result.user,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : Tự cập nhật thông tin cá nhân - end
 }
 
 module.exports = new UserController();

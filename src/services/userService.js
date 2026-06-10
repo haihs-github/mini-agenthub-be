@@ -4,7 +4,7 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const AppError = require("../utils/appError");
 const ERROR = require("../constants/errorCodes");
-
+const jwt = require("jsonwebtoken");
 class UserService {
   // BKAV HaiHS : tạo người dùng mới - start
   async createUserByAdmin(email, fullname, groupIds) {
@@ -151,6 +151,55 @@ class UserService {
         totalPages,
         currentPage: page,
         limit,
+      },
+    };
+  }
+
+  async updateMyProfile(userId, { phone, address }) {
+    // 1. Kiểm tra tài khoản có tồn tại thực tế không
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new AppError(ERROR.USER.NOT_FOUND);
+    }
+
+    const updateData = {};
+    if (phone !== undefined) updateData.phone = phone;
+    if (address !== undefined) updateData.address = address;
+
+    // 2. Gọi Repo cập nhật thông tin vào DB
+    await userRepository.update(userId, updateData);
+
+    // 3. Kéo lại thông tin User kèm theo các Nhóm (Groups) để bốc quyền ký lại Token
+    const updatedUser = await userRepository.findByIdDetailed(userId);
+
+    // 4. Hợp nhất danh sách quyền hạn thời gian thực
+    const groupPerms = updatedUser.groups
+      ? updatedUser.groups.flatMap((g) => g.permissions)
+      : [];
+    const allPermissions = [
+      ...new Set([...updatedUser.permissions, ...groupPerms]),
+    ];
+
+    // 5. Tiến hành tái ký JWT Token mới
+    const SECRET_KEY = process.env.JWT_SECRET || "Sieu_Mat_Ma_Cua_Toi_123";
+    const newToken = jwt.sign(
+      {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        permissions: allPermissions,
+      },
+      SECRET_KEY,
+      { expiresIn: "24h" },
+    );
+
+    return {
+      token: newToken,
+      user: {
+        email: updatedUser.email,
+        fullname: updatedUser.fullname,
+        phone: updatedUser.phone,
+        address: updatedUser.address,
+        permissions: allPermissions,
       },
     };
   }

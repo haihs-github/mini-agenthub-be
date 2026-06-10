@@ -40,6 +40,10 @@ router.get(
 );
 // BKAV HaiHS : API lấy chi tiết người dùng - end
 
+// API tự cập nhật thông tin bản thân (Cần đăng nhập) - start
+router.put("/profile", authMiddleware, userController.updateMyProfile);
+// API tự cập nhật thông tin bản thân (Cần đăng nhập) - start
+
 // BKAV HaiHS : API cập nhật người dùng - start
 router.put(
   "/:id",

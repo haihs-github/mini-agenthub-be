@@ -30,7 +30,13 @@ class AuthService {
     // Ký Token (Trong thực tế nhớ để JWT_SECRET trong file .env)
     const SECRET_KEY = process.env.JWT_SECRET || "Sieu_Mat_Ma_Cua_Toi_123";
     const token = jwt.sign(
-      { id: user.id, email: user.email, permissions: allPermissions },
+      {
+        id: user.id,
+        email: user.email,
+        permissions: allPermissions,
+        phone: user.phone,
+        address: user.address,
+      },
       SECRET_KEY,
       { expiresIn: "24h" },
     );

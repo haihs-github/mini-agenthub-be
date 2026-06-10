@@ -10,6 +10,8 @@ datasource db {
 model User {
   id            Int            @id @default(autoincrement())
   fullname      String         
+  phone         String?
+  address       String?
   email         String         @unique
   password      String
   permissions   String[]       @default(["CHAT", "CONV_C", "CONV_R", "CONV_U", "CONV_D"]) 
