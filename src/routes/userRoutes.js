@@ -53,6 +53,10 @@ router.put(
 );
 // BKAV HaiHS : API cập nhật người dùng - start
 
+// BKAV HaiHS : API xóa tài khoản người dùng - start
+router.delete("/profile", authMiddleware, userController.deleteMyAccount);
+// BKAV HaiHS : API xóa tài khoản người dùng - end
+
 // BKAV HaiHS : API xóa người dùng - start
 router.delete(
   "/:id",

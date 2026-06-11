@@ -154,6 +154,7 @@ class UserService {
       },
     };
   }
+  // BKAV HaiHS : tìm người dùng - end
 
   async updateMyProfile(userId, { phone, address }) {
     // 1. Kiểm tra tài khoản có tồn tại thực tế không
@@ -203,7 +204,20 @@ class UserService {
       },
     };
   }
+
+  // BKAV HaiHS : Logic tự xóa tài khoản - start
+  async deleteMyAccount(userId) {
+    // 1. Kiểm tra tài khoản có thực sự tồn tại trên hệ thống không
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new AppError(ERROR.USER.NOT_FOUND);
+    }
+
+    // 2. Ra lệnh cho Repository thực thi xóa bản ghi
+    // Cơ chế Cascade ngầm của PostgreSQL/Prisma sẽ tự quét sạch các bảng con phụ thuộc
+    return await userRepository.delete(userId);
+  }
+  // BKAV HaiHS : Logic tự xóa tài khoản - end
 }
-// BKAV HaiHS : tìm người dùng - end
 
 module.exports = new UserService();

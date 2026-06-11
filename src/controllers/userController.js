@@ -238,6 +238,31 @@ class UserController {
     }
   }
   // BKAV HaiHS : Tự cập nhật thông tin cá nhân - end
+
+  // BKAV HaiHS : Tự xóa tài khoản của chính mình - start
+  async deleteMyAccount(req, res, next) {
+    try {
+      // Trích xuất danh tính tuyệt đối an toàn từ Token
+      const userId = parseInt(req.userId);
+
+      if (isNaN(userId)) {
+        return res
+          .status(400)
+          .json({ message: "Danh tính người dùng không hợp lệ!" });
+      }
+
+      // Bàn giao việc cho Service xử lý logic nghiệp vụ
+      await userService.deleteMyAccount(userId);
+
+      res.status(200).json({
+        message:
+          "Xóa tài khoản cá nhân của bạn thành công! Toàn bộ lịch sử và dữ liệu liên quan đã được hủy bỏ hoàn toàn.",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : Tự xóa tài khoản của chính mình - end
 }
 
 module.exports = new UserController();
