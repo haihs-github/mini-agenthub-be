@@ -44,7 +44,12 @@ class AuthService {
     // Trả kết quả sạch sẽ về cho Controller
     return {
       token: token,
-      user: { email: user.email, permissions: allPermissions },
+      user: {
+        email: user.email,
+        permissions: allPermissions,
+        phone: user.phone,
+        address: user.address,
+      },
     };
   }
   // BKAV HaiHS : xử lý đăng nhập - end

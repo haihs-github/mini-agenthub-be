@@ -244,6 +244,33 @@ class ConversationController {
     }
   }
   // BKAV HaiHS : controller Xử lý Chat - end
+
+  // BKAV HaiHS : Xóa toàn bộ lịch sử chat của chính mình - start
+  async clearAllConversations(req, res, next) {
+    try {
+      // Bốc danh tính trực tiếp từ Token bảo mật, chặn đứng nguy cơ hack xóa hộ
+      const userId = parseInt(req.userId);
+
+      if (isNaN(userId)) {
+        return res
+          .status(400)
+          .json({ message: "Danh tính người dùng không hợp lệ!" });
+      }
+
+      // Bàn giao việc cho Service
+      const result = await conversationService.clearAllConversations(userId);
+
+      res.status(200).json({
+        message: "Xóa toàn bộ lịch sử các cuộc hội thoại thành công!",
+        data: {
+          deletedCount: result.count, // Trả về số lượng phòng chat đã bị xóa sạch
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : Xóa toàn bộ lịch sử chat của chính mình - end
 }
 
 module.exports = new ConversationController();

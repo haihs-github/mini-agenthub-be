@@ -138,6 +138,13 @@ class ConversationService {
     });
   }
   // BKAV HaiHS : lưu câu trả lời của AI vào db - end
+
+  // BKAV HaiHS : Logic xóa toàn bộ phòng chat chính chủ - start
+  async clearAllConversations(userId) {
+    // userId truyền xuống đây chắc chắn đã là số nguyên sạch từ Controller
+    return await conversationRepository.deleteAllByUserId(userId);
+  }
+  // BKAV HaiHS : Logic xóa toàn bộ phòng chat chính chủ - end
 }
 
 module.exports = new ConversationService();

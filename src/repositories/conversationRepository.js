@@ -97,6 +97,16 @@ class ConversationRepository {
     });
   }
   // BKAV HaiHS : Hàm lấy lịch sử tin nhắn - end
+
+  // BKAV HaiHS : Hàm xóa toàn bộ lịch sử của 1 user - start
+  async deleteAllByUserId(userId) {
+    return await prisma.conversation.deleteMany({
+      where: {
+        userId: userId,
+      },
+    });
+  }
+  // BKAV HaiHS : Hàm xóa toàn bộ lịch sử của 1 user - end
 }
 
 module.exports = new ConversationRepository();

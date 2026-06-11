@@ -41,6 +41,15 @@ router.put(
 );
 // BKAV HaiHS : API Cập nhật tiêu đề phòng chat của chính mình (CONV_U) - end
 
+// BKAV HaiHS : Xóa toàn bộ lịch sử chat - start
+router.delete(
+  "/",
+  authMiddleware,
+  permissionMiddleware("CONV_D"),
+  conversationController.clearAllConversations,
+);
+// BKAV HaiHS : Xóa toàn bộ lịch sử chat - end
+
 // BKAV HaiHS : API Xóa phòng chat của chính mình (CONV_D) - start
 router.delete(
   "/:id",
