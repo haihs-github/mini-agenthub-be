@@ -128,16 +128,16 @@ class AiService {
 
   // BKAV HaiHS : Xử lý luồng Stream bằng cách bắn request sang Server Flowise - start
   async getFlowiseStream(prompt, historyMessages) {
-    const chatHistory = historyMessages.map((msg) => ({
-      role: msg.role === "user" ? "userMessage" : "apiMessage",
-      message: msg.content,
-    }));
+    // const chatHistory = historyMessages.map((msg) => ({
+    //   role: msg.role === "user" ? "userMessage" : "apiMessage",
+    //   message: msg.content,
+    // }));
 
     const response = await axios.post(
       process.env.FLOWISE_API_URL,
       {
         question: prompt,
-        chatHistory: chatHistory,
+        // chatHistory: chatHistory,
         streaming: true,
       },
       {
