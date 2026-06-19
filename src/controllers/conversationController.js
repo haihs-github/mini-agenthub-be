@@ -193,14 +193,29 @@ class ConversationController {
       let fullAIResponse = "";
 
       try {
-        // 🌟 ĐỈNH CAO KIẾN TRÚC: Không cần if/else phân biệt Groq hay Flowise nữa!
-        // Cả 2 vũ trụ giờ chạy chung 1 vòng lặp consume chữ duy nhất cực kỳ sạch sẽ.
         for await (const chunk of stream) {
-          const content = chunk.toString(); // Chuyển đổi gói tin nhị phân thành chữ thuần túy
-          if (content) {
-            fullAIResponse += content;
-            // Bắn dữ liệu về cho Frontend theo đúng cấu trúc sạch { content }
-            res.write(`data: ${JSON.stringify({ content })}\n\n`);
+          const chunkStr = chunk.toString();
+          if (chunkStr) {
+            // Gửi trực tiếp chunk (đã định dạng "data: ...\n\n") về frontend
+            res.write(chunkStr);
+
+            // Bóc tách text thuần từ SSE chunk để cộng dồn lưu DB
+            const lines = chunkStr.split("\n");
+            for (const line of lines) {
+              const cleanedLine = line.trim();
+              if (cleanedLine && cleanedLine.startsWith("data: ")) {
+                const dataStr = cleanedLine.replace("data: ", "").trim();
+                if (dataStr !== "[DONE]") {
+                  try {
+                    const parsed = JSON.parse(dataStr);
+                    const text = parsed.choices?.[0]?.delta?.content || parsed.content || "";
+                    fullAIResponse += text;
+                  } catch (e) {
+                    // Bỏ qua lỗi cú pháp dòng dở dang
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -210,9 +225,6 @@ class ConversationController {
           fullAIResponse,
           modelName || "flowise",
         );
-
-        // Phát gói tin kết thúc luồng cho FE đóng kết nối
-        res.write(`data: [DONE]\n\n`);
       } catch (streamError) {
         console.error(
           "💥 Lỗi trong quá trình truyền luồng hoặc lưu DB:",
