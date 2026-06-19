@@ -176,7 +176,7 @@ class ConversationController {
           .json({ message: "Nội dung câu hỏi không được để trống!" });
       }
 
-      // Kích hoạt Stream dữ liệu sạch từ Service
+      // 1. Kích hoạt Stream dữ liệu sạch từ Service (Luôn trả về Readable Stream phát ra Chữ)
       const stream = await conversationService.prepareChatStream(
         conversationId,
         userId,
@@ -185,59 +185,44 @@ class ConversationController {
         files,
       );
 
-      // Thiết lập Header SSE chuẩn
+      // 2. Thiết lập Header SSE chuẩn quốc tế cho Client lắng nghe
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
       let fullAIResponse = "";
 
-      if (modelName !== "flowise" && modelName) {
-        // --- KỊCH BẢN CHAT VỚI GROQ ---
+      try {
+        // 🌟 ĐỈNH CAO KIẾN TRÚC: Không cần if/else phân biệt Groq hay Flowise nữa!
+        // Cả 2 vũ trụ giờ chạy chung 1 vòng lặp consume chữ duy nhất cực kỳ sạch sẽ.
         for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || "";
+          const content = chunk.toString(); // Chuyển đổi gói tin nhị phân thành chữ thuần túy
           if (content) {
             fullAIResponse += content;
+            // Bắn dữ liệu về cho Frontend theo đúng cấu trúc sạch { content }
             res.write(`data: ${JSON.stringify({ content })}\n\n`);
           }
         }
 
+        // 3. Sau khi luồng stream kết thúc an toàn, tiến hành lưu câu trả lời vào DB
         await conversationService.saveAssistantMessage(
           conversationId,
           fullAIResponse,
-          modelName,
+          modelName || "flowise",
         );
+
+        // Phát gói tin kết thúc luồng cho FE đóng kết nối
         res.write(`data: [DONE]\n\n`);
-        res.end();
-      } else {
-        // --- KỊCH BẢN CHAT FLOWISE ---
-        stream.on("data", (chunk) => {
-          fullAIResponse += chunk.toString();
-          res.write(chunk);
-        });
-
-        // ĐÃ SỬA [tienpv]: Bọc try/catch bất đồng bộ để tránh crash ứng dụng khi ghi DB lỗi
-        stream.on("end", async () => {
-          try {
-            await conversationService.saveAssistantMessage(
-              conversationId,
-              fullAIResponse,
-              "flowise",
-            );
-          } catch (dbError) {
-            console.error("Lỗi lưu tin nhắn Flowise vào DB:", dbError);
-            // Bắn gói tin thông báo lỗi SSE cho client biết thay vì im lặng sập nguồn
-            res.write(
-              `data: ${JSON.stringify({ error: "Không thể lưu trữ lịch sử tin nhắn." })}\n\n`,
-            );
-          } finally {
-            res.end();
-          }
-        });
-
-        stream.on("error", (err) => {
-          next(err);
-        });
+      } catch (streamError) {
+        console.error(
+          "💥 Lỗi trong quá trình truyền luồng hoặc lưu DB:",
+          streamError,
+        );
+        res.write(
+          `data: ${JSON.stringify({ error: "Luồng xử lý dữ liệu AI gặp sự cố bấp bênh." })}\n\n`,
+        );
+      } finally {
+        res.end(); // Bảo đảm đóng cổng kết nối HTTP an toàn
       }
     } catch (error) {
       next(error);

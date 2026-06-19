@@ -1,47 +1,51 @@
-const Groq = require("groq-sdk");
 const axios = require("axios");
 const fs = require("fs");
 const { ProxyAgent, setGlobalDispatcher } = require("undici");
+const { Readable } = require("stream");
 
-// BKAV HaiHS : Cấu hình Proxy toàn cục nếu biến môi trường HTTP_PROXY tồn tại - start
+// 1. Nạp các thực thể Message chuẩn hóa và cấu hình Model từ LangChain
+const { HumanMessage, AIMessage } = require("@langchain/core/messages");
+const { ChatGroq } = require("@langchain/groq");
+
+// BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - start
 if (process.env.HTTP_PROXY) {
   const proxyAgent = new ProxyAgent({ uri: process.env.HTTP_PROXY });
   setGlobalDispatcher(proxyAgent);
 }
-// BKAV HaiHS : Cấu hình Proxy toàn cục nếu biến môi trường HTTP_PROXY tồn tại - end
-
-// BKAV HaiHS : Khởi tạo client Groq với API Key từ biến môi trường - start
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
-// BKAV HaiHS : Khởi tạo client Groq với API Key từ biến môi trường - end
+// BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - end
 
 class AiService {
   /**
-   * Hàm cốt lõi nhận diện Model và phân phối luồng Stream từ AI tương ứng
-   * @param {string} modelName - Tên model người dùng chọn (ví dụ: llama3-8b-8192 hoặc flowise)
-   * @param {string} prompt - Câu hỏi hiện tại của người dùng
-   * @param {Array} historyMessages - Mảng lịch sử các tin nhắn cũ từ DB
+   * Hàm cốt lõi nhận diện Model và phân phối luồng Stream tương ứng
    */
-  // BKAV HaiHS : Hàm quyết định gọi Stream từ Flowise hay Groq dựa trên modelName - start
   async generateStreamResponse(modelName, prompt, historyMessages) {
     if (modelName === "flowise" || !modelName) {
       return await this.getFlowiseStream(prompt, historyMessages);
     }
 
-    return await this.getGroqStream(modelName, prompt, historyMessages);
+    return await this.getLangChainStream(modelName, prompt, historyMessages);
   }
-  // BKAV HaiHS : Hàm quyết định gọi Stream từ Flowise hay Groq dựa trên modelName - end
 
-  // BKAV HaiHS : Xử lý luồng Stream trực tiếp từ Groq SDK - start
-  async getGroqStream(modelName, prompt, historyMessages) {
+  /**
+   * Bộ Khung Chuẩn Hóa Toàn Diện Qua Vũ Trụ LangChain
+   */
+  async getLangChainStream(modelName, prompt, historyMessages) {
+    // 1. KHỞI TẠO FACTORY MODEL
+    const chatModel = new ChatGroq({
+      apiKey: process.env.GROQ_API_KEY,
+      model: modelName,
+      temperature: 0.5,
+    });
+
     const convertLocalFileToBase64 = (filePath, fileType) => {
       const fileBuffer = fs.readFileSync(filePath);
       return `data:${fileType};base64,${fileBuffer.toString("base64")}`;
     };
 
-    // 1. Chuyển đổi lịch sử chat cũ sang cấu trúc Groq (Hỗ trợ cả các tin nhắn cũ có chứa ảnh)
+    // 2. CHUẨN HÓA LỊCH SỬ CHAT SANG ĐỐI TƯỢNG MESSAGE CỦA LANGCHAIN
     const formattedMessages = historyMessages.map((msg) => {
+      const isUser = msg.role === "user";
+
       if (msg.attachments && msg.attachments.length > 0) {
         const contentArray = [{ type: "text", text: msg.content }];
         msg.attachments.forEach((att) => {
@@ -52,21 +56,21 @@ class AiService {
             },
           });
         });
-        return {
-          role: msg.role === "user" ? "user" : "assistant",
-          content: contentArray,
-        };
+
+        return isUser
+          ? new HumanMessage({ content: contentArray })
+          : new AIMessage({ content: contentArray });
       }
-      return {
-        role: msg.role === "user" ? "user" : "assistant",
-        content: msg.content,
-      };
+
+      return isUser
+        ? new HumanMessage(msg.content)
+        : new AIMessage(msg.content);
     });
 
-    // 2. Xử lý câu hỏi hiện tại: Nếu có đính kèm ảnh mới, đóng gói dạng Đa phương thức (Multimodal)
+    // 3. XỬ LÝ CÂU HỎI HIỆN TẠI VÀ ĐẨY VÀO CUỐI NGỮ CẢNH
     const currentMessage = historyMessages[historyMessages.length - 1];
-
     let currentContent;
+
     if (
       currentMessage &&
       currentMessage.attachments &&
@@ -85,24 +89,17 @@ class AiService {
       currentContent = prompt;
     }
 
-    // 3. Đẩy câu hỏi hiện tại vào cuối mảng ngữ cảnh chat
-    formattedMessages.push({
-      role: "user",
-      content: currentContent,
-    });
+    formattedMessages.push(new HumanMessage({ content: currentContent }));
 
-    // BKAV HaiHS: Bộ lọc quét ngược mảng cấu trúc từ mới nhất về cũ nhất để ép khống chế tối đa 5 ảnh
+    // 4. BỘ LỌC GIỚI HẠN TỐI ĐA 5 ẢNH
     const maxAllowedImages = 5;
     let totalDetectedImages = 0;
 
     for (let i = formattedMessages.length - 1; i >= 0; i--) {
       if (Array.isArray(formattedMessages[i].content)) {
         const optimizedContent = [];
-
-        // Quét ngược các phần tử content bên trong tin nhắn hiện tại để ưu tiên ảnh mới hơn
         for (let j = formattedMessages[i].content.length - 1; j >= 0; j--) {
           const contentItem = formattedMessages[i].content[j];
-
           if (contentItem.type === "image_url") {
             if (totalDetectedImages < maxAllowedImages) {
               totalDetectedImages++;
@@ -116,28 +113,38 @@ class AiService {
       }
     }
 
-    // 4. Gọi API Groq với mô hình Vision bảo đảm payload an toàn không bao giờ vượt quá 5 ảnh
-    return await groq.chat.completions.create({
-      model: modelName,
-      messages: formattedMessages,
-      stream: true,
-      temperature: 0.5,
-    });
+    // 5. KÍCH HOẠT LUỒNG STREAM TỪ LANGCHAIN
+    const langchainStream = await chatModel.stream(formattedMessages);
+
+    // 6. ĐÃ SỬA: Biến đổi thành chuỗi văn bản SSE (String) thay vì để nguyên Object
+    async function* transformLangChainStream() {
+      for await (const chunk of langchainStream) {
+        const payload = {
+          choices: [
+            {
+              delta: {
+                content: chunk.content || "",
+              },
+            },
+          ],
+        };
+        // 🌟 BÍ KÍP: Bắn về dạng string "data: {...}\n\n" đúng gu của res.write()
+        yield `data: ${JSON.stringify(payload)}\n\n`;
+      }
+      yield `data: [DONE]\n\n`; // Chuỗi báo hiệu kết thúc luồng chuẩn quốc tế
+    }
+
+    return Readable.from(transformLangChainStream());
   }
-  // BKAV HaiHS : Xử lý luồng Stream trực tiếp từ Groq SDK - end
 
-  // BKAV HaiHS : Xử lý luồng Stream bằng cách bắn request sang Server Flowise - start
+  /**
+   * Xử lý luồng Stream bắn request sang Server Flowise đặc thù
+   */
   async getFlowiseStream(prompt, historyMessages) {
-    // const chatHistory = historyMessages.map((msg) => ({
-    //   role: msg.role === "user" ? "userMessage" : "apiMessage",
-    //   message: msg.content,
-    // }));
-
     const response = await axios.post(
       process.env.FLOWISE_API_URL,
       {
         question: prompt,
-        // chatHistory: chatHistory,
         streaming: true,
       },
       {
@@ -151,9 +158,50 @@ class AiService {
       },
     );
 
-    return response.data;
+    // ĐÃ SỬA: Biến đổi thành chuỗi văn bản SSE (String) cho Flowise
+    async function* transformFlowiseStream() {
+      let buffer = "";
+
+      for await (const chunk of response.data) {
+        buffer += chunk.toString();
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          const cleanedLine = line.trim();
+          if (!cleanedLine) continue;
+
+          let jsonStr = cleanedLine;
+          if (jsonStr.startsWith("data:")) {
+            jsonStr = jsonStr.replace(/^data:\s*/, "");
+          }
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+
+            if (parsed.event === "token") {
+              const payload = {
+                choices: [
+                  {
+                    delta: {
+                      content: parsed.data || "",
+                    },
+                  },
+                ],
+              };
+              // 🌟 BÍ KÍP: Đồng bộ hóa Flowise về chung 1 định dạng chuỗi giống hệt Groq/LangChain
+              yield `data: ${JSON.stringify(payload)}\n\n`;
+            }
+          } catch (e) {
+            // Bỏ qua lỗi cú pháp dòng dở dang
+          }
+        }
+      }
+      yield `data: [DONE]\n\n`;
+    }
+
+    return Readable.from(transformFlowiseStream());
   }
-  // BKAV HaiHS : Xử lý luồng Stream bằng cách bắn request sang Server Flowise - end
 }
 
 module.exports = new AiService();
