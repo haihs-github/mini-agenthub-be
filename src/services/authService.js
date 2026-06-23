@@ -33,6 +33,7 @@ class AuthService {
       {
         id: user.id,
         email: user.email,
+        fullname: user.fullname,
         permissions: allPermissions,
         phone: user.phone,
         address: user.address,
@@ -46,6 +47,7 @@ class AuthService {
       token: token,
       user: {
         email: user.email,
+        fullname: user.fullname,
         permissions: allPermissions,
         phone: user.phone,
         address: user.address,

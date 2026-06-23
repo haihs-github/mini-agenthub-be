@@ -68,6 +68,8 @@ class UserRepository {
           id: true,
           email: true,
           fullname: true,
+          phone: true,
+          address: true,
           permissions: true,
           // Kéo thêm thông tin các nhóm mà user này tham gia (nếu có)
           groups: {
@@ -94,6 +96,8 @@ class UserRepository {
         id: true,
         email: true,
         fullname: true,
+        phone: true,
+        address: true,
         permissions: true,
         // Kéo thêm thông tin các nhóm của người dùng này
         groups: {
@@ -118,6 +122,8 @@ class UserRepository {
         id: true,
         email: true,
         fullname: true,
+        phone: true,
+        address: true,
         permissions: true,
         groups: {
           select: {
@@ -159,6 +165,8 @@ class UserRepository {
           id: true,
           email: true,
           fullname: true,
+          phone: true,
+          address: true,
           permissions: true,
           groups: {
             select: { id: true, name: true },
