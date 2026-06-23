@@ -1,4 +1,5 @@
 const conversationService = require("../services/conversationService");
+const aiStreamManager = require("../services/aiStreamManager");
 
 class ConversationController {
   // BKAV HaiHS : controller Tạo phòng - start
@@ -56,7 +57,7 @@ class ConversationController {
   }
   // BKAV HaiHS : controller Lấy lịch sử chat - end
 
-  // BKAV HaiHS : controller Lấy chi tiết khung chat - start
+  // BKAV HaiHS : Lay chi tiet phong chat kem kiem tra luong dang stream - start
   async getConversationDetail(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -86,7 +87,10 @@ class ConversationController {
 
       res.status(200).json({
         message: "Lấy chi tiết cuộc hội thoại và lịch sử tin nhắn thành công!",
-        data: result,
+        data: {
+          ...result,
+          isStreaming: aiStreamManager.isSessionActive(conversationId),
+        },
         // Gửi kèm trạng thái phân trang tin nhắn hiện tại để FE biết đường gọi tiếp khi User cuộn chuột lên top
         pagination: {
           currentPage: page,
@@ -97,7 +101,7 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Lấy chi tiết khung chat - end
+  // BKAV HaiHS : Lay chi tiet phong chat kem kiem tra luong dang stream - end
 
   // BKAV HaiHS : controller Cập nhật tiêu đề conversations - start
   async updateTitle(req, res, next) {
@@ -156,7 +160,7 @@ class ConversationController {
   }
   // BKAV HaiHS : controller Xóa conversations - end
 
-  // BKAV HaiHS : controller Xử lý Chat - start
+  // BKAV HaiHS : Tiep nhan yeu cau chat va khoi chay luong stream AI chay ngam - start
   async handleChat(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -176,71 +180,75 @@ class ConversationController {
           .json({ message: "Nội dung câu hỏi không được để trống!" });
       }
 
-      // 1. Kích hoạt Stream dữ liệu sạch từ Service (Luôn trả về Readable Stream phát ra Chữ)
-      const stream = await conversationService.prepareChatStream(
+      if (aiStreamManager.isSessionActive(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "Phòng chat đang có luồng xử lý hoạt động!" });
+      }
+
+      await aiStreamManager.startBackgroundStream(
         conversationId,
-        userId,
-        prompt,
+        (signal) =>
+          conversationService.prepareChatStream(
+            conversationId,
+            userId,
+            prompt,
+            modelName,
+            files,
+            signal,
+          ),
         modelName,
-        files,
       );
 
-      // 2. Thiết lập Header SSE chuẩn quốc tế cho Client lắng nghe
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      let fullAIResponse = "";
-
-      try {
-        for await (const chunk of stream) {
-          const chunkStr = chunk.toString();
-          if (chunkStr) {
-            // Gửi trực tiếp chunk (đã định dạng "data: ...\n\n") về frontend
-            res.write(chunkStr);
-
-            // Bóc tách text thuần từ SSE chunk để cộng dồn lưu DB
-            const lines = chunkStr.split("\n");
-            for (const line of lines) {
-              const cleanedLine = line.trim();
-              if (cleanedLine && cleanedLine.startsWith("data: ")) {
-                const dataStr = cleanedLine.replace("data: ", "").trim();
-                if (dataStr !== "[DONE]") {
-                  try {
-                    const parsed = JSON.parse(dataStr);
-                    const text = parsed.choices?.[0]?.delta?.content || parsed.content || "";
-                    fullAIResponse += text;
-                  } catch (e) {
-                    // Bỏ qua lỗi cú pháp dòng dở dang
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // 3. Sau khi luồng stream kết thúc an toàn, tiến hành lưu câu trả lời vào DB
-        await conversationService.saveAssistantMessage(
-          conversationId,
-          fullAIResponse,
-          modelName || "flowise",
-        );
-      } catch (streamError) {
-        console.error(
-          "💥 Lỗi trong quá trình truyền luồng hoặc lưu DB:",
-          streamError,
-        );
-        res.write(
-          `data: ${JSON.stringify({ error: "Luồng xử lý dữ liệu AI gặp sự cố bấp bênh." })}\n\n`,
-        );
-      } finally {
-        res.end(); // Bảo đảm đóng cổng kết nối HTTP an toàn
-      }
+      await aiStreamManager.connectClient(conversationId, res);
     } catch (error) {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Xử lý Chat - end
+  // BKAV HaiHS : Tiep nhan yeu cau chat va khoi chay luong stream AI chay ngam - end
+
+  // BKAV HaiHS : Dang ky ket noi lai vao luong stream dang chay - start
+  async handleStreamReconnect(req, res, next) {
+    try {
+      const conversationId = parseInt(req.params.id);
+      if (isNaN(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      await aiStreamManager.connectClient(conversationId, res);
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : Dang ky ket noi lai vao luong stream dang chay - end
+
+  // BKAV HaiHS : Dung luong AI va luu tin nhan dang do vao DB - start
+  async handleStop(req, res, next) {
+    try {
+      const conversationId = parseInt(req.params.id);
+      if (isNaN(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+      }
+
+      await aiStreamManager.abortSession(conversationId);
+      res.status(200).json({ message: "Dừng luồng stream thành công!" });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : Dung luong AI va luu tin nhan dang do vao DB - end
 
   // BKAV HaiHS : Xóa toàn bộ lịch sử chat của chính mình - start
   async clearAllConversations(req, res, next) {

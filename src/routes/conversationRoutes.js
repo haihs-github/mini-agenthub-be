@@ -59,7 +59,7 @@ router.delete(
 );
 // BKAV HaiHS : API Xóa phòng chat của chính mình (CONV_D) - end
 
-// BKAV HaiHS : API Xử lý Chat - start
+// BKAV HaiHS : API Xu ly Chat va phan phoi stream - start
 router.post(
   "/:id/chat",
   authMiddleware,
@@ -67,6 +67,20 @@ router.post(
   upload.array("images", 5),
   conversationController.handleChat,
 );
-// BKAV HaiHS : API Xử lý Chat - end
+
+router.get(
+  "/:id/chat",
+  authMiddleware,
+  permissionMiddleware("CHAT"),
+  conversationController.handleStreamReconnect,
+);
+
+router.post(
+  "/:id/stop",
+  authMiddleware,
+  permissionMiddleware("CHAT"),
+  conversationController.handleStop,
+);
+// BKAV HaiHS : API Xu ly Chat va phan phoi stream - end
 
 module.exports = router;

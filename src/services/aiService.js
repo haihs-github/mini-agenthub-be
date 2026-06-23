@@ -15,21 +15,18 @@ if (process.env.HTTP_PROXY) {
 // BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - end
 
 class AiService {
-  /**
-   * Hàm cốt lõi nhận diện Model và phân phối luồng Stream tương ứng
-   */
-  async generateStreamResponse(modelName, prompt, historyMessages) {
+  // BKAV HaiHS : Dieu huong luong stream AI theo tung loai model - start
+  async generateStreamResponse(modelName, prompt, historyMessages, signal) {
     if (modelName === "flowise" || !modelName) {
-      return await this.getFlowiseStream(prompt, historyMessages);
+      return await this.getFlowiseStream(prompt, historyMessages, signal);
     }
 
-    return await this.getLangChainStream(modelName, prompt, historyMessages);
+    return await this.getLangChainStream(modelName, prompt, historyMessages, signal);
   }
+  // BKAV HaiHS : Dieu huong luong stream AI theo tung loai model - end
 
-  /**
-   * Bộ Khung Chuẩn Hóa Toàn Diện Qua Vũ Trụ LangChain
-   */
-  async getLangChainStream(modelName, prompt, historyMessages) {
+  // BKAV HaiHS : Lay luong stream tu LangChain va truyen tin hieu dung - start
+  async getLangChainStream(modelName, prompt, historyMessages, signal) {
     // 1. KHỞI TẠO FACTORY MODEL
     const chatModel = new ChatGroq({
       apiKey: process.env.GROQ_API_KEY,
@@ -114,7 +111,7 @@ class AiService {
     }
 
     // 5. KÍCH HOẠT LUỒNG STREAM TỪ LANGCHAIN
-    const langchainStream = await chatModel.stream(formattedMessages);
+    const langchainStream = await chatModel.stream(formattedMessages, { signal });
 
     // 6. ĐÃ SỬA: Biến đổi thành chuỗi văn bản SSE (String) thay vì để nguyên Object
     async function* transformLangChainStream() {
@@ -136,11 +133,10 @@ class AiService {
 
     return Readable.from(transformLangChainStream());
   }
+  // BKAV HaiHS : Lay luong stream tu LangChain va truyen tin hieu dung - end
 
-  /**
-   * Xử lý luồng Stream bắn request sang Server Flowise đặc thù
-   */
-  async getFlowiseStream(prompt, historyMessages) {
+  // BKAV HaiHS : Lay luong stream tu Flowise va truyen tin hieu dung - start
+  async getFlowiseStream(prompt, historyMessages, signal) {
     const response = await axios.post(
       process.env.FLOWISE_API_URL,
       {
@@ -155,6 +151,7 @@ class AiService {
             Authorization: `Bearer ${process.env.FLOWISE_API_KEY}`,
           }),
         },
+        signal,
       },
     );
 
@@ -202,6 +199,7 @@ class AiService {
 
     return Readable.from(transformFlowiseStream());
   }
+  // BKAV HaiHS : Lay luong stream tu Flowise va truyen tin hieu dung - end
 }
 
 module.exports = new AiService();

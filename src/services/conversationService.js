@@ -81,13 +81,14 @@ class ConversationService {
   }
   // BKAV HaiHS : Logic xóa phòng chat - end
 
-  // BKAV HaiHS : hàm chuẩn bị ngữ cảnh và gọi AI qua aiService - start
+  // BKAV HaiHS : chuan bi ngu canh va goi aiService kem tin hieu abort - start
   async prepareChatStream(
     conversationId,
     userId,
     prompt,
     modelName,
     files = [],
+    signal,
   ) {
     // Kiểm tra quyền sở hữu phòng chat (Logic nghiệp vụ gác cổng tài nguyên)
     const conversation = await conversationRepository.findByIdAndUser(
@@ -124,9 +125,10 @@ class ConversationService {
       modelName,
       prompt,
       historyContext,
+      signal,
     );
   }
-  // BKAV HaiHS : hàm chuẩn bị ngữ cảnh và gọi AI qua aiService - end
+  // BKAV HaiHS : chuan bi ngu canh va goi aiService kem tin hieu abort - end
 
   // BKAV HaiHS : lưu câu trả lời của AI vào db - start
   async saveAssistantMessage(conversationId, content, modelName) {
