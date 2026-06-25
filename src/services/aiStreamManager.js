@@ -40,9 +40,7 @@ class AIStreamManager {
                 try {
                   const parsed = JSON.parse(dataStr);
                   const text =
-                    parsed.choices?.[0]?.delta?.content ||
-                    parsed.content ||
-                    "";
+                    parsed.choices?.[0]?.delta?.content || parsed.content || "";
                   cleanText += text;
                 } catch (e) {
                   // Bo qua dong loi parse thong tin
@@ -57,6 +55,10 @@ class AIStreamManager {
             emitter.emit("chunk", cleanText);
           }
         }
+
+        // BKAV HaiHS : Ghi nhận phần tử kết thúc [DONE] vào Redis Stream để báo hiệu hoàn tất cho Server B - start
+        await redisStreamService.addChunk(conversationId, "[DONE]");
+        // BKAV HaiHS : Ghi nhận phần tử kết thúc [DONE] vào Redis Stream để báo hiệu hoàn tất cho Server B - end
 
         if (!session.isFinished) {
           await conversationRepository.createMessage({
@@ -92,14 +94,82 @@ class AIStreamManager {
   // BKAV HaiHS : Ket noi nguoi dung hien tai vao luong AI stream dang hoat dong - start
   async connectClient(conversationId, res) {
     const session = this.sessions.get(conversationId);
+    let lastId = "0";
+    let connectionIsOpen = true;
+
+    res.on("close", () => {
+      connectionIsOpen = false;
+    });
+
     if (!session) {
-      res.write(`data: [DONE]\n\n`);
-      res.end();
+      // Server B: Không có session local, kiểm tra xem có Redis Stream đang chạy không
+      const hasStream = await redisStreamService.hasStream(conversationId);
+      if (!hasStream) {
+        res.write(`data: [DONE]\n\n`);
+        res.end();
+        return;
+      }
+
+      // Đọc và phát lại toàn bộ lịch sử (Playback) từ đầu (lastId = "0")
+      const historyResult = await redisStreamService.readNext(conversationId, "0");
+      lastId = historyResult.lastId;
+      for (const item of historyResult.chunks) {
+        if (item.chunk === "[DONE]") {
+          res.write(`data: [DONE]\n\n`);
+          res.end();
+          return;
+        }
+        const payload = { choices: [{ delta: { content: item.chunk } }] };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+
+      // Vòng lặp chờ chữ mới realtime từ Redis Stream
+      (async () => {
+        try {
+          while (connectionIsOpen) {
+            const hasStreamStill = await redisStreamService.hasStream(conversationId);
+            if (!hasStreamStill) {
+              res.write(`data: [DONE]\n\n`);
+              res.end();
+              break;
+            }
+
+            const readResult = await redisStreamService.readNext(conversationId, lastId, 2000);
+            if (readResult && readResult.chunks.length > 0) {
+              lastId = readResult.lastId;
+              let foundDone = false;
+              for (const item of readResult.chunks) {
+                if (item.chunk === "[DONE]") {
+                  foundDone = true;
+                  break;
+                }
+                const payload = { choices: [{ delta: { content: item.chunk } }] };
+                res.write(`data: ${JSON.stringify(payload)}\n\n`);
+              }
+              if (foundDone) {
+                res.write(`data: [DONE]\n\n`);
+                res.end();
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Lỗi đọc stream chặn tại Server B:", err);
+          res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+          res.end();
+        }
+      })();
       return;
     }
 
+    // Server A: Có session local, sử dụng emitter để phát realtime siêu tốc
     const pastChunks = await redisStreamService.readAll(conversationId);
     for (const chunk of pastChunks) {
+      if (chunk === "[DONE]") {
+        res.write(`data: [DONE]\n\n`);
+        res.end();
+        return;
+      }
       const payload = { choices: [{ delta: { content: chunk } }] };
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     }
@@ -148,8 +218,10 @@ class AIStreamManager {
   // BKAV HaiHS : Huy bo phien stream dang chay va luu phan tin nhan dang do vao DB - end
 
   // BKAV HaiHS : Kiem tra phien stream cua phong chat hien tai co dang active khong - start
-  isSessionActive(conversationId) {
-    return this.sessions.has(conversationId);
+  async isSessionActive(conversationId) {
+    const localActive = this.sessions.has(conversationId);
+    const redisActive = await redisStreamService.hasStream(conversationId);
+    return localActive || redisActive;
   }
   // BKAV HaiHS : Kiem tra phien stream cua phong chat hien tai co dang active khong - end
 }

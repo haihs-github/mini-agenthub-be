@@ -89,7 +89,7 @@ class ConversationController {
         message: "Lấy chi tiết cuộc hội thoại và lịch sử tin nhắn thành công!",
         data: {
           ...result,
-          isStreaming: aiStreamManager.isSessionActive(conversationId),
+          isStreaming: await aiStreamManager.isSessionActive(conversationId),
         },
         // Gửi kèm trạng thái phân trang tin nhắn hiện tại để FE biết đường gọi tiếp khi User cuộn chuột lên top
         pagination: {
@@ -180,7 +180,7 @@ class ConversationController {
           .json({ message: "Nội dung câu hỏi không được để trống!" });
       }
 
-      if (aiStreamManager.isSessionActive(conversationId)) {
+      if (await aiStreamManager.isSessionActive(conversationId)) {
         return res
           .status(400)
           .json({ message: "Phòng chat đang có luồng xử lý hoạt động!" });
