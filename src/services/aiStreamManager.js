@@ -43,8 +43,10 @@ class AIStreamManager {
               if (dataStr !== "[DONE]") {
                 try {
                   const parsed = JSON.parse(dataStr);
+                  // BKAV HaiHS : Ưu tiên lấy content theo định dạng của LangChain - start
                   const text =
-                    parsed.choices?.[0]?.delta?.content || parsed.content || "";
+                    parsed.content || parsed.choices?.[0]?.delta?.content || "";
+                  // BKAV HaiHS : Ưu tiên lấy content theo định dạng của LangChain - end
                   cleanText += text;
                 } catch (e) {
                   // Bo qua dong loi parse thong tin
@@ -123,7 +125,9 @@ class AIStreamManager {
           res.end();
           return;
         }
-        const payload = { choices: [{ delta: { content: item.chunk } }] };
+        // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
+        const payload = { content: item.chunk };
+        // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
       }
 
@@ -147,7 +151,9 @@ class AIStreamManager {
                   foundDone = true;
                   break;
                 }
-                const payload = { choices: [{ delta: { content: item.chunk } }] };
+                // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
+                const payload = { content: item.chunk };
+                // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
                 res.write(`data: ${JSON.stringify(payload)}\n\n`);
               }
               if (foundDone) {
@@ -174,12 +180,16 @@ class AIStreamManager {
         res.end();
         return;
       }
-      const payload = { choices: [{ delta: { content: chunk } }] };
+      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
+      const payload = { content: chunk };
+      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     }
 
     const onChunk = (chunkText) => {
-      const payload = { choices: [{ delta: { content: chunkText } }] };
+      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
+      const payload = { content: chunkText };
+      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
     };
 

@@ -116,15 +116,11 @@ class AiService {
     // 6. ĐÃ SỬA: Biến đổi thành chuỗi văn bản SSE (String) thay vì để nguyên Object
     async function* transformLangChainStream() {
       for await (const chunk of langchainStream) {
+        // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
         const payload = {
-          choices: [
-            {
-              delta: {
-                content: chunk.content || "",
-              },
-            },
-          ],
+          content: chunk.content || "",
         };
+        // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
         // 🌟 BÍ KÍP: Bắn về dạng string "data: {...}\n\n" đúng gu của res.write()
         yield `data: ${JSON.stringify(payload)}\n\n`;
       }
@@ -176,19 +172,15 @@ class AiService {
           try {
             const parsed = JSON.parse(jsonStr);
 
-            if (parsed.event === "token") {
-              const payload = {
-                choices: [
-                  {
-                    delta: {
-                      content: parsed.data || "",
-                    },
-                  },
-                ],
-              };
-              // 🌟 BÍ KÍP: Đồng bộ hóa Flowise về chung 1 định dạng chuỗi giống hệt Groq/LangChain
-              yield `data: ${JSON.stringify(payload)}\n\n`;
-            }
+             if (parsed.event === "token") {
+               // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - start
+               const payload = {
+                 content: parsed.data || "",
+               };
+               // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - end
+               // 🌟 BÍ KÍP: Đồng bộ hóa Flowise về chung 1 định dạng chuỗi giống hệt Groq/LangChain
+               yield `data: ${JSON.stringify(payload)}\n\n`;
+             }
           } catch (e) {
             // Bỏ qua lỗi cú pháp dòng dở dang
           }
