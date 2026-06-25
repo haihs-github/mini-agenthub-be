@@ -33,6 +33,9 @@ class RedisStreamService {
     if (this.isRedisConnected) {
       try {
         await this.redis.xadd(key, "*", "chunk", chunk);
+        // BKAV HaiHS : Cấu hình TTL 10 phút để tự động dọn dẹp stream khi server crash - start
+        await this.redis.expire(key, 600);
+        // BKAV HaiHS : Cấu hình TTL 10 phút để tự động dọn dẹp stream khi server crash - end
         return;
       } catch (e) {
         // Tự động bỏ qua lỗi và chuyển sang bộ nhớ tạm
