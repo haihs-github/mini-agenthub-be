@@ -22,6 +22,10 @@ class AIStreamManager {
 
     this.sessions.set(conversationId, session);
     await redisStreamService.deleteStream(conversationId);
+    
+    // BKAV HaiHS : Khởi tạo Stream trên Redis ngay lập tức bằng chunk rỗng để tránh Race Condition - start
+    await redisStreamService.addChunk(conversationId, "");
+    // BKAV HaiHS : Khởi tạo Stream trên Redis ngay lập tức bằng chunk rỗng để tránh Race Condition - end
 
     (async () => {
       try {
