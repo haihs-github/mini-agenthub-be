@@ -81,6 +81,15 @@ router.post(
   permissionMiddleware("CHAT"),
   conversationController.handleStop,
 );
+
+// BKAV HaiHS : API Huy bo luong AI cheo may chu qua Redis Pub/Sub - start
+router.post(
+  "/:id/abort",
+  authMiddleware,
+  permissionMiddleware("CHAT"),
+  conversationController.handleAbort,
+);
+// BKAV HaiHS : API Huy bo luong AI cheo may chu qua Redis Pub/Sub - end
 // BKAV HaiHS : API Xu ly Chat va phan phoi stream - end
 
 module.exports = router;

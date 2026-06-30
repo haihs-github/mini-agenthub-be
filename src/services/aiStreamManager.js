@@ -1,37 +1,69 @@
-const EventEmitter = require("events");
 const redisStreamService = require("./redisStreamService");
 const conversationRepository = require("../repositories/conversationRepository");
 
-class AIStreamManager {
-  constructor() {
-    this.sessions = new Map();
+// BKAV HaiHS : ReorderBuffer - Bo dem sap xep lai thu tu token trong RAM - start
+// Cau truc: streamId -> { nextSeq, pending: Map<seq, event>, abortController, unsubscribe }
+const streams = new Map();
+
+/**
+ * Xa cac token dung thu tu tu ReorderBuffer xuong cac SSE res
+ * Chi duoc goi sau khi da dong bo nextSeq voi lich su
+ */
+function flushPendingMessages(streamId) {
+  const state = streams.get(streamId);
+  if (!state) return;
+
+  while (state.pending.has(state.nextSeq)) {
+    const event = state.pending.get(state.nextSeq);
+    state.pending.delete(state.nextSeq);
+    state.nextSeq++;
+
+    // Phat tin hieu cho tat ca cac client dang ket noi vao stream nay
+    for (const handler of state.clientHandlers) {
+      try {
+        handler(event);
+      } catch (e) {
+        // Bo qua neu client da dong ket noi
+      }
+    }
   }
+}
+// BKAV HaiHS : ReorderBuffer - Bo dem sap xep lai thu tu token trong RAM - end
 
-  // BKAV HaiHS : Khoi chay luong AI chay ngam va ghi nhan du lieu vao Redis Stream - start
-  async startBackgroundStream(conversationId, chatModelPromise, modelName) {
+class AIStreamManager {
+  constructor() {}
+
+  // BKAV HaiHS : Khoi chay luong AI chay ngam va ghi nhan du lieu qua Pub/Sub + Stream - start
+  async startBackgroundStream(streamId, chatModelPromise, modelName) {
     const abortController = new AbortController();
-    const emitter = new EventEmitter();
 
-    const session = {
+    // Khoi tao trang thai stream trong bo nho RAM cuc bo
+    streams.set(streamId, {
+      nextSeq: 0, // Con tro tieu thu (consumer pointer) cho ReorderBuffer
+      producerSeq: 0, // Con tro san xuat (producer pointer) cuc bo - tranh phu thuoc Redis
+      pending: new Map(),
+      clientHandlers: new Set(), // Tap hop cac callback client dang ket noi
       abortController,
-      emitter,
       fullText: "",
       isFinished: false,
       modelName,
-    };
+    });
 
-    this.sessions.set(conversationId, session);
-    await redisStreamService.deleteStream(conversationId);
-    
-    // BKAV HaiHS : Khởi tạo Stream trên Redis ngay lập tức bằng chunk rỗng để tránh Race Condition - start
-    await redisStreamService.addChunk(conversationId, "");
-    // BKAV HaiHS : Khởi tạo Stream trên Redis ngay lập tức bằng chunk rỗng để tránh Race Condition - end
+    // Xoa du lieu cu tren Redis va bat dau fresh, dat co active phan tan
+    await redisStreamService.deleteStream(streamId);
+    await redisStreamService.setStreamActive(streamId);
 
     (async () => {
+      const state = streams.get(streamId);
       try {
         const stream = await chatModelPromise(abortController.signal);
 
         for await (const chunk of stream) {
+          // BKAV HaiHS : Kiem tra tin hieu huy NGAY DAU moi vong lap de thoat som nhat co the - start
+          // Giam thieu so chunk "bay vao" giua luc FE bam Dung va tin hieu abort thuc su den
+          if (abortController.signal.aborted) break;
+          // BKAV HaiHS : Kiem tra tin hieu huy NGAY DAU moi vong lap de thoat som nhat co the - end
+
           const chunkText = chunk.toString();
           let cleanText = "";
 
@@ -43,10 +75,10 @@ class AIStreamManager {
               if (dataStr !== "[DONE]") {
                 try {
                   const parsed = JSON.parse(dataStr);
-                  // BKAV HaiHS : Ưu tiên lấy content theo định dạng của LangChain - start
+                  // BKAV HaiHS : Uu tien lay content theo dinh dang cua LangChain - start
                   const text =
                     parsed.content || parsed.choices?.[0]?.delta?.content || "";
-                  // BKAV HaiHS : Ưu tiên lấy content theo định dạng của LangChain - end
+                  // BKAV HaiHS : Uu tien lay content theo dinh dang cua LangChain - end
                   cleanText += text;
                 } catch (e) {
                   // Bo qua dong loi parse thong tin
@@ -56,188 +88,316 @@ class AIStreamManager {
           }
 
           if (cleanText) {
-            session.fullText += cleanText;
-            await redisStreamService.addChunk(conversationId, cleanText);
-            emitter.emit("chunk", cleanText);
+            const currentState = streams.get(streamId);
+            if (!currentState) break;
+
+            // BKAV HaiHS : Kiem tra lan 2 sau khi parse xong chunk - tranh ghi chunk cuoi neu vua abort - start
+            if (abortController.signal.aborted) break;
+            // BKAV HaiHS : Kiem tra lan 2 sau khi parse xong chunk - tranh ghi chunk cuoi neu vua abort - end
+
+            // BKAV HaiHS : Dung bien cuc bo producerSeq thay vi goi Redis de tranh bug khi Redis mat ket noi - start
+            const seq = currentState.producerSeq++;
+            // BKAV HaiHS : Dung bien cuc bo producerSeq thay vi goi Redis de tranh bug khi Redis mat ket noi - end
+
+            const event = { type: "chunk", seq, content: cleanText };
+
+            currentState.fullText += cleanText;
+
+            // BKAV HaiHS : Ghi chunk vao Redis Stream lam lich su - start
+            await redisStreamService.appendChunk(streamId, event);
+            // BKAV HaiHS : Ghi chunk vao Redis Stream lam lich su - end
+
+            // BKAV HaiHS : Phat chunk qua Pub/Sub de truyen realtime - start
+            await redisStreamService.publishChunk(streamId, event);
+            // BKAV HaiHS : Phat chunk qua Pub/Sub de truyen realtime - end
+
+            // Dua truc tiep vao ReorderBuffer cua server nay de client tren server A nhan ngay
+            currentState.pending.set(seq, event);
+            flushPendingMessages(streamId);
           }
         }
 
-        // BKAV HaiHS : Ghi nhận phần tử kết thúc [DONE] vào Redis Stream để báo hiệu hoàn tất cho Server B - start
-        await redisStreamService.addChunk(conversationId, "[DONE]");
-        // BKAV HaiHS : Ghi nhận phần tử kết thúc [DONE] vào Redis Stream để báo hiệu hoàn tất cho Server B - end
+        // BKAV HaiHS : Phat tin hieu DONE khi AI hoan tat - start
+        const doneEvent = { type: "DONE" };
+        await redisStreamService.publishChunk(streamId, doneEvent);
 
-        if (!session.isFinished) {
+        // BKAV HaiHS : Gui tin hieu DONE toi cac client handler cuc bo cua Server A - start
+        const currentStateDone = streams.get(streamId);
+        if (currentStateDone) {
+          for (const handler of currentStateDone.clientHandlers) {
+            try {
+              handler(doneEvent);
+            } catch (e) {
+              // Bỏ qua lỗi gửi
+            }
+          }
+        }
+        // BKAV HaiHS : Gui tin hieu DONE toi cac client handler cuc bo cua Server A - end
+        // BKAV HaiHS : Phat tin hieu DONE khi AI hoan tat - end
+
+        const finalState = streams.get(streamId);
+        if (finalState && !finalState.isFinished) {
           await conversationRepository.createMessage({
             role: "assistant",
-            content: session.fullText,
-            modelName: session.modelName || "flowise",
-            conversationId,
+            content: finalState.fullText,
+            modelName: finalState.modelName || "flowise",
+            conversationId: streamId,
           });
         }
       } catch (err) {
-        if (err.name === "AbortError" || err.message?.includes("aborted")) {
-          if (session.fullText.trim()) {
+        const currentState = streams.get(streamId);
+        // BKAV HaiHS : Kiem tra nhieu cach de nhan biet day la abort, khong phai loi that - start
+        const isAborted =
+          err.name === "AbortError" ||
+          err.message?.includes("aborted") ||
+          err.message?.includes("canceled") ||
+          abortController.signal.aborted;
+        // BKAV HaiHS : Kiem tra nhieu cach de nhan biet day la abort, khong phai loi that - end
+
+        if (isAborted) {
+          // BKAV HaiHS : Luu tin nhan dang do vao DB khi nguoi dung bam Dung - start
+          if (
+            currentState &&
+            !currentState.isFinished &&
+            currentState.fullText.trim()
+          ) {
+            currentState.isFinished = true; // Danh dau truoc de tranh double-save
             await conversationRepository.createMessage({
               role: "assistant",
-              content: session.fullText,
-              modelName: session.modelName || "flowise",
-              conversationId,
+              content: currentState.fullText,
+              modelName: currentState.modelName || "flowise",
+              conversationId: streamId,
             });
           }
+          // BKAV HaiHS : Luu tin nhan dang do vao DB khi nguoi dung bam Dung - end
         } else {
-          emitter.emit("error", err);
+          // Phat loi xuong tat ca client dang ket noi
+          const errorEvent = { type: "ERROR", message: err.message };
+          await redisStreamService.publishChunk(streamId, errorEvent);
+
+          // BKAV HaiHS : Gui tin hieu ERROR toi cac client handler cuc bo cua Server A - start
+          const currentStateErr = streams.get(streamId);
+          if (currentStateErr) {
+            for (const handler of currentStateErr.clientHandlers) {
+              try {
+                handler(errorEvent);
+              } catch (e) {
+                // Bỏ qua lỗi gửi
+              }
+            }
+          }
+          // BKAV HaiHS : Gui tin hieu ERROR toi cac client handler cuc bo cua Server A - end
         }
       } finally {
-        session.isFinished = true;
-        emitter.emit("end");
-        await redisStreamService.deleteStream(conversationId);
-        this.sessions.delete(conversationId);
+        const finalState = streams.get(streamId);
+        if (finalState) finalState.isFinished = true;
+        await redisStreamService.deleteStream(streamId);
+        streams.delete(streamId);
       }
     })();
   }
-  // BKAV HaiHS : Khoi chay luong AI chay ngam va ghi nhan du lieu vao Redis Stream - end
+  // BKAV HaiHS : Khoi chay luong AI chay ngam va ghi nhan du lieu qua Pub/Sub + Stream - end
 
-  // BKAV HaiHS : Ket noi nguoi dung hien tai vao luong AI stream dang hoat dong - start
-  async connectClient(conversationId, res) {
-    const session = this.sessions.get(conversationId);
-    let lastId = "0";
+  // BKAV HaiHS : Ket noi client ban dau (Server A - co session local) - start
+  async connectClient(streamId, res) {
+    const state = streams.get(streamId);
+
+    if (!state) {
+      // Khong co session local -> dung subscribeWithResume de ket noi qua Redis
+      return this.subscribeWithResume(streamId, res);
+    }
+
+    // Server A: Co session local, dang ky clientHandler de nhan chunk truc tiep
+    let connectionIsOpen = true;
+
+    // BKAV HaiHS : Khai bao onEvent TRUOC res.on("close") de tranh TDZ reference error - start
+    const onEvent = (event) => {
+      if (!connectionIsOpen) return;
+      if (event.type === "chunk") {
+        const payload = { content: event.content };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      } else if (event.type === "DONE") {
+        res.write("data: [DONE]\n\n");
+        res.end();
+        connectionIsOpen = false;
+        state.clientHandlers.delete(onEvent);
+      } else if (event.type === "ERROR") {
+        res.write(`data: ${JSON.stringify({ error: event.message })}\n\n`);
+        res.end();
+        connectionIsOpen = false;
+        state.clientHandlers.delete(onEvent);
+      }
+    };
+    // BKAV HaiHS : Khai bao onEvent TRUOC res.on("close") de tranh TDZ reference error - end
+
+    res.on("close", () => {
+      connectionIsOpen = false;
+      state.clientHandlers.delete(onEvent);
+    });
+
+    state.clientHandlers.add(onEvent);
+
+    // Neu stream da xong truoc khi client ket noi thi dong ngay
+    if (state.isFinished) {
+      state.clientHandlers.delete(onEvent);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
+  }
+  // BKAV HaiHS : Ket noi client ban dau (Server A - co session local) - end
+
+  // BKAV HaiHS : Ket noi lai theo quy trinh 3 buoc: Subscribe Truoc - Query Sau - Flush - start
+  async subscribeWithResume(streamId, res) {
     let connectionIsOpen = true;
 
     res.on("close", () => {
       connectionIsOpen = false;
     });
 
-    if (!session) {
-      // Server B: Không có session local, kiểm tra xem có Redis Stream đang chạy không
-      const hasStream = await redisStreamService.hasStream(conversationId);
+    // Buoc 1: SUBSCRIBE TRUOC - Hang so cac live token vao ReorderBuffer tam thoi
+    // Dam bao khong mat token nao trong khoang thoi gian Query lich su
+    const liveBuffer = []; // Bo dem tam thoi cho cac token nhan duoc truoc khi sync
+
+    let unsubscribe = await redisStreamService.subscribeToChannel(
+      streamId,
+      (event) => {
+        if (!connectionIsOpen) return;
+        liveBuffer.push(event);
+      },
+    );
+
+    // Buoc 2: QUERY LICH SU - Doc toan bo chunk da luu tu Redis Stream
+    let historyEvents = [];
+    try {
+      historyEvents = await redisStreamService.getChunks(streamId);
+    } catch (e) {
+      // Neu loi thi bo qua lich su
+    }
+
+    // Kiem tra neu stream khong ton tai va khong co lich su
+    if (historyEvents.length === 0 && liveBuffer.length === 0) {
+      const hasStream = await redisStreamService.hasStream(streamId);
       if (!hasStream) {
-        res.write(`data: [DONE]\n\n`);
+        await unsubscribe();
+        res.write("data: [DONE]\n\n");
         res.end();
         return;
       }
+    }
 
-      // Đọc và phát lại toàn bộ lịch sử (Playback) từ đầu (lastId = "0")
-      const historyResult = await redisStreamService.readNext(conversationId, "0");
-      lastId = historyResult.lastId;
-      for (const item of historyResult.chunks) {
-        if (item.chunk === "[DONE]") {
-          res.write(`data: [DONE]\n\n`);
-          res.end();
-          return;
-        }
-        // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
-        const payload = { content: item.chunk };
-        // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    // Buoc 3: GUI LICH SU va DONG BO seq
+    // BKAV HaiHS : Gui toan bo lich su ve FE bang 1 su kien sync duy nhat - start
+    const historyChunks = historyEvents
+      .filter((e) => e.type === "chunk")
+      .sort((a, b) => a.seq - b.seq);
+
+    const fullHistoryText = historyChunks.map((e) => e.content).join("");
+    const historyDone = historyEvents.some((e) => e.type === "DONE");
+
+    if (fullHistoryText) {
+      // Phat mot su kien sync duy nhat chua toan bo lich su
+      const syncPayload = {
+        sync: true,
+        content: fullHistoryText,
+        resumeFromSeq: historyChunks.length,
+      };
+      if (connectionIsOpen) {
+        res.write(`data: ${JSON.stringify(syncPayload)}\n\n`);
       }
+    }
+    // BKAV HaiHS : Gui toan bo lich su ve FE bang 1 su kien sync duy nhat - end
 
-      // Vòng lặp chờ chữ mới realtime từ Redis Stream
-      (async () => {
-        try {
-          while (connectionIsOpen) {
-            const hasStreamStill = await redisStreamService.hasStream(conversationId);
-            if (!hasStreamStill) {
-              res.write(`data: [DONE]\n\n`);
-              res.end();
-              break;
-            }
-
-            const readResult = await redisStreamService.readNext(conversationId, lastId, 2000);
-            if (readResult && readResult.chunks.length > 0) {
-              lastId = readResult.lastId;
-              let foundDone = false;
-              for (const item of readResult.chunks) {
-                if (item.chunk === "[DONE]") {
-                  foundDone = true;
-                  break;
-                }
-                // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
-                const payload = { content: item.chunk };
-                // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
-                res.write(`data: ${JSON.stringify(payload)}\n\n`);
-              }
-              if (foundDone) {
-                res.write(`data: [DONE]\n\n`);
-                res.end();
-                break;
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Lỗi đọc stream chặn tại Server B:", err);
-          res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
-          res.end();
-        }
-      })();
+    // Neu lich su da co DONE thi ket thuc luon
+    if (historyDone) {
+      await unsubscribe();
+      if (connectionIsOpen) {
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
       return;
     }
 
-    // Server A: Có session local, sử dụng emitter để phát realtime siêu tốc
-    const pastChunks = await redisStreamService.readAll(conversationId);
-    for (const chunk of pastChunks) {
-      if (chunk === "[DONE]") {
-        res.write(`data: [DONE]\n\n`);
+    // Dong bo nextSeq: bo qua tat ca cac live token co seq <= lich su da gui
+    const syncedSeq = historyChunks.length;
+
+    // BKAV HaiHS : Flush ReorderBuffer - Xa cac live token dang cho - start
+    // Xu ly cac token da nam trong liveBuffer truoc khi ket thuc sync
+    const pendingLive = [...liveBuffer];
+    liveBuffer.length = 0; // Xoa buffer tam thoi
+
+    for (const event of pendingLive) {
+      if (!connectionIsOpen) break;
+      if (event.type === "DONE") {
+        await unsubscribe();
+        res.write("data: [DONE]\n\n");
         res.end();
         return;
       }
-      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
-      const payload = { content: chunk };
-      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      if (event.type === "chunk" && event.seq >= syncedSeq) {
+        const payload = { content: event.content };
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
     }
+    // BKAV HaiHS : Flush ReorderBuffer - Xa cac live token dang cho - end
 
-    const onChunk = (chunkText) => {
-      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
-      const payload = { content: chunkText };
-      // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    };
+    // Chuyen che do: Tu nay nhan truc tiep tu Pub/Sub va day xuong FE ngay lap tuc
+    // BKAV HaiHS : Lang nghe cac chunk tiep theo qua Pub/Sub realtime - start
+    await unsubscribe(); // Huy subscribe cu
 
-    const onEnd = () => {
-      res.write(`data: [DONE]\n\n`);
-      res.end();
-      cleanup();
-    };
+    unsubscribe = await redisStreamService.subscribeToChannel(
+      streamId,
+      (event) => {
+        if (!connectionIsOpen) return;
+        if (event.type === "DONE") {
+          res.write("data: [DONE]\n\n");
+          res.end();
+          connectionIsOpen = false;
+          unsubscribe();
+          return;
+        }
+        if (event.type === "ABORT") {
+          res.write("data: [DONE]\n\n");
+          res.end();
+          connectionIsOpen = false;
+          unsubscribe();
+          return;
+        }
+        if (event.type === "chunk" && event.seq >= syncedSeq) {
+          const payload = { content: event.content };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        }
+      },
+    );
+    // BKAV HaiHS : Lang nghe cac chunk tiep theo qua Pub/Sub realtime - end
 
-    const onError = (err) => {
-      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
-      res.end();
-      cleanup();
-    };
+    // Khi client dong ket noi thi cleanup
+    res.on("close", async () => {
+      connectionIsOpen = false;
+      await unsubscribe();
+    });
+  }
+  // BKAV HaiHS : Ket noi lai theo quy trinh 3 buoc: Subscribe Truoc - Query Sau - Flush - end
 
-    const cleanup = () => {
-      session.emitter.off("chunk", onChunk);
-      session.emitter.off("end", onEnd);
-      session.emitter.off("error", onError);
-    };
-
-    session.emitter.on("chunk", onChunk);
-    session.emitter.on("end", onEnd);
-    session.emitter.on("error", onError);
-
-    if (session.isFinished) {
-      onEnd();
+  // BKAV HaiHS : Huy bo phien stream va phat tin hieu ABORT cheo may chu - start
+  async abortSession(streamId) {
+    const state = streams.get(streamId);
+    if (state) {
+      // BKAV HaiHS : Chi goi abort(), KHONG xoa state ngay tai day - start
+      // Ly do: catch block trong IIFE startBackgroundStream can doc state.fullText
+      // de luu tin nhan dang do vao DB truoc khi finally block chay va tu dong xoa state
+      state.abortController.abort();
+      // BKAV HaiHS : Chi goi abort(), KHONG xoa state ngay tai day - end
     }
+    // Phat tin hieu ABORT qua Pub/Sub de cac server khac biet
+    await redisStreamService.publishAbort(streamId);
   }
-  // BKAV HaiHS : Ket noi nguoi dung hien tai vao luong AI stream dang hoat dong - end
+  // BKAV HaiHS : Huy bo phien stream va phat tin hieu ABORT cheo may chu - end
 
-  // BKAV HaiHS : Huy bo phien stream dang chay va luu phan tin nhan dang do vao DB - start
-  async abortSession(conversationId) {
-    const session = this.sessions.get(conversationId);
-    if (session) {
-      session.abortController.abort();
-      this.sessions.delete(conversationId);
-    }
+  // BKAV HaiHS : Kiem tra luong stream co dang active khong (Thuan Redis Distributed) - start
+  async isStreamActive(streamId) {
+    return await redisStreamService.isStreamActive(streamId);
   }
-  // BKAV HaiHS : Huy bo phien stream dang chay va luu phan tin nhan dang do vao DB - end
-
-  // BKAV HaiHS : Kiem tra phien stream cua phong chat hien tai co dang active khong - start
-  async isSessionActive(conversationId) {
-    const localActive = this.sessions.has(conversationId);
-    const redisActive = await redisStreamService.hasStream(conversationId);
-    return localActive || redisActive;
-  }
-  // BKAV HaiHS : Kiem tra phien stream cua phong chat hien tai co dang active khong - end
+  // BKAV HaiHS : Kiem tra luong stream co dang active khong (Thuan Redis Distributed) - end
 }
 
 module.exports = new AIStreamManager();

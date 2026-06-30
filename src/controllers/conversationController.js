@@ -1,8 +1,9 @@
 const conversationService = require("../services/conversationService");
 const aiStreamManager = require("../services/aiStreamManager");
+const redisStreamService = require("../services/redisStreamService");
 
 class ConversationController {
-  // BKAV HaiHS : controller Tạo phòng - start
+  // BKAV HaiHS : Tạo một cuộc hội thoại mới trống cho người dùng - start
   async createConversation(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -23,9 +24,9 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Tạo phòng - end
+  // BKAV HaiHS : Tạo một cuộc hội thoại mới trống cho người dùng - end
 
-  // BKAV HaiHS : controller Lấy lịch sử chat - start
+  // BKAV HaiHS : Lấy danh sách các cuộc hội thoại mà người dùng sở hữu - start
   async getMyConversations(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -55,9 +56,9 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Lấy lịch sử chat - end
+  // BKAV HaiHS : Lấy danh sách các cuộc hội thoại mà người dùng sở hữu - end
 
-  // BKAV HaiHS : Lay chi tiet phong chat kem kiem tra luong dang stream - start
+  // BKAV HaiHS : Lấy lịch sử  tin nhắn của một phòng chat cụ thể - start
   async getConversationDetail(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -89,7 +90,7 @@ class ConversationController {
         message: "Lấy chi tiết cuộc hội thoại và lịch sử tin nhắn thành công!",
         data: {
           ...result,
-          isStreaming: await aiStreamManager.isSessionActive(conversationId),
+          isStreaming: await aiStreamManager.isStreamActive(conversationId),
         },
         // Gửi kèm trạng thái phân trang tin nhắn hiện tại để FE biết đường gọi tiếp khi User cuộn chuột lên top
         pagination: {
@@ -101,9 +102,9 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : Lay chi tiet phong chat kem kiem tra luong dang stream - end
+  // BKAV HaiHS : Lấy lịch sử  tin nhắn của một phòng chat cụ thể - end
 
-  // BKAV HaiHS : controller Cập nhật tiêu đề conversations - start
+  // BKAV HaiHS : Cập nhật tiêu đề conversations - start
   async updateTitle(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -135,9 +136,9 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Cập nhật tiêu đề conversations - end
+  // BKAV HaiHS : Cập nhật tiêu đề conversations - end
 
-  // BKAV HaiHS : controller Xóa conversations - start
+  // BKAV HaiHS : Xóa conversations - start
   async deleteConversation(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -158,7 +159,7 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : controller Xóa conversations - end
+  // BKAV HaiHS : Xóa conversations - end
 
   // BKAV HaiHS : Tiep nhan yeu cau chat va khoi chay luong stream AI chay ngam - start
   async handleChat(req, res, next) {
@@ -180,7 +181,7 @@ class ConversationController {
           .json({ message: "Nội dung câu hỏi không được để trống!" });
       }
 
-      if (await aiStreamManager.isSessionActive(conversationId)) {
+      if (await aiStreamManager.isStreamActive(conversationId)) {
         return res
           .status(400)
           .json({ message: "Phòng chat đang có luồng xử lý hoạt động!" });
@@ -203,6 +204,9 @@ class ConversationController {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
+      // BKAV HaiHS : Tat buffering cua Nginx de SSE truyen ngay lap tuc - start
+      res.setHeader("X-Accel-Buffering", "no");
+      // BKAV HaiHS : Tat buffering cua Nginx de SSE truyen ngay lap tuc - end
 
       await aiStreamManager.connectClient(conversationId, res);
     } catch (error) {
@@ -224,13 +228,41 @@ class ConversationController {
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
+      // BKAV HaiHS : Tat buffering cua Nginx de SSE truyen ngay lap tuc - start
+      res.setHeader("X-Accel-Buffering", "no");
+      // BKAV HaiHS : Tat buffering cua Nginx de SSE truyen ngay lap tuc - end
 
-      await aiStreamManager.connectClient(conversationId, res);
+      // BKAV HaiHS : Ho tro tham so ?resume=true de ket noi lai theo quy trinh 3 buoc - start
+      const isResume = req.query.resume === "true";
+      if (isResume) {
+        await aiStreamManager.subscribeWithResume(conversationId, res);
+      } else {
+        await aiStreamManager.connectClient(conversationId, res);
+      }
+      // BKAV HaiHS : Ho tro tham so ?resume=true de ket noi lai theo quy trinh 3 buoc - end
     } catch (error) {
       next(error);
     }
   }
   // BKAV HaiHS : Dang ky ket noi lai vao luong stream dang chay - end
+
+  // BKAV HaiHS : Huy bo luong AI va phat tin hieu ABORT cheo may chu qua Redis Pub/Sub - start
+  async handleAbort(req, res, next) {
+    try {
+      const conversationId = parseInt(req.params.id);
+      if (isNaN(conversationId)) {
+        return res
+          .status(400)
+          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+      }
+
+      await aiStreamManager.abortSession(conversationId);
+      res.status(200).json({ message: "Phát tín hiệu dừng luồng thành công!" });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : Huy bo luong AI va phat tin hieu ABORT cheo may chu qua Redis Pub/Sub - end
 
   // BKAV HaiHS : Dung luong AI va luu tin nhan dang do vao DB - start
   async handleStop(req, res, next) {

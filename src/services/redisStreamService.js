@@ -1,176 +1,262 @@
 const Redis = require("ioredis");
 
-// BKAV HaiHS : Khoi tao ket noi den co so du lieu Redis - start
+// BKAV HaiHS : Khoi tao 2 ket noi Redis rieng biet - start
 class RedisStreamService {
   constructor() {
     this.isRedisConnected = false;
-    this.redis = null;
-    this.memoryStreams = new Map();
+    this.ioredisClient = null; // Client ghi/đọc thông thường
+    this.subscriberClient = null; // Client chuyên dụng cho Pub/Sub
+    this.memoryStreams = new Map(); // Fallback khi Redis mất kết nối
+    // BKAV HaiHS : Bo dem so thu tu cuc bo phong khi Redis mat ket noi - start
+    this.localSeqCounters = new Map(); // streamId -> so nguyen tang dan
+    // BKAV HaiHS : Bo dem so thu tu cuc bo phong khi Redis mat ket noi - end
 
     try {
-      this.redis = new Redis({
+      const redisConfig = {
         host: process.env.REDIS_HOST,
         port: process.env.REDIS_PORT,
         maxRetriesPerRequest: 1,
-      });
+      };
 
-      this.redis.on("connect", () => {
+      // Kết nối 1: Client ghi/đọc thông thường
+      this.ioredisClient = new Redis(redisConfig);
+      this.ioredisClient.on("connect", () => {
         this.isRedisConnected = true;
       });
-
-      this.redis.on("error", () => {
+      this.ioredisClient.on("error", () => {
         this.isRedisConnected = false;
+      });
+
+      // Kết nối 2: Client chuyên dụng cho Subscribe (không dùng cho lệnh khác)
+      this.subscriberClient = new Redis(redisConfig);
+      this.subscriberClient.on("error", () => {
+        // Im lặng bắt lỗi kết nối subscriber
       });
     } catch (e) {
       this.isRedisConnected = false;
     }
   }
-  // BKAV HaiHS : Khoi tao ket noi den co so du lieu Redis - end
+  // BKAV HaiHS : Khoi tao 2 ket noi Redis rieng biet - end
 
-  // BKAV HaiHS : Them mot chunk moi vao Redis Stream hoac bo nho tam - start
-  async addChunk(conversationId, chunk) {
-    const key = `stream:conversation:${conversationId}`;
+  // BKAV HaiHS : Cap so thu tu cho tung chunk de chong mat thu tu - start
+  async getNextSequence(streamId) {
+    const seqKey = `stream:${streamId}:seq`;
     if (this.isRedisConnected) {
       try {
-        await this.redis.xadd(key, "*", "chunk", chunk);
-        // BKAV HaiHS : Cấu hình TTL 10 phút để tự động dọn dẹp stream khi server crash - start
-        await this.redis.expire(key, 600);
-        // BKAV HaiHS : Cấu hình TTL 10 phút để tự động dọn dẹp stream khi server crash - end
+        // BKAV HaiHS : Dung Pipeline de INCR + EXPIRE trong 1 round-trip duy nhat - start
+        const pipeline = this.ioredisClient.pipeline();
+        pipeline.incr(seqKey);
+        pipeline.expire(seqKey, 86400); // TTL 24 gio
+        const results = await pipeline.exec();
+        const seq = results[0][1]; // Gia tri tra ve cua INCR
+        // BKAV HaiHS : Dung Pipeline de INCR + EXPIRE trong 1 round-trip duy nhat - end
+        return seq - 1; // Bat dau tu 0
+      } catch (e) {
+        // Neu Redis loi thi roi xuong fallback cuc bo
+      }
+    }
+    // BKAV HaiHS : Fallback cuc bo: dung Map tang dan thay vi Date.now() de dam bao thu tu - start
+    const current = this.localSeqCounters.get(streamId) || 0;
+    this.localSeqCounters.set(streamId, current + 1);
+    return current;
+    // BKAV HaiHS : Fallback cuc bo: dung Map tang dan thay vi Date.now() de dam bao thu tu - end
+  }
+  // BKAV HaiHS : Cap so thu tu cho tung chunk de chong mat thu tu - end
+
+  // BKAV HaiHS : Ghi chunk vao Redis Stream va dat TTL 20 phut - start
+  async appendChunk(streamId, event) {
+    const streamKey = `stream:${streamId}:chunks`;
+    if (this.isRedisConnected) {
+      try {
+        // Dùng Pipeline để gửi XADD + EXPIRE trong một lần gọi duy nhất
+        const pipeline = this.ioredisClient.pipeline();
+        pipeline.xadd(streamKey, "*", "data", JSON.stringify(event));
+        pipeline.expire(streamKey, 1200); // TTL 20 phút
+        await pipeline.exec();
         return;
       } catch (e) {
         // Tự động bỏ qua lỗi và chuyển sang bộ nhớ tạm
       }
     }
 
-    if (!this.memoryStreams.has(key)) {
-      this.memoryStreams.set(key, []);
+    // Fallback: lưu vào bộ nhớ tạm
+    if (!this.memoryStreams.has(streamId)) {
+      this.memoryStreams.set(streamId, []);
     }
-    this.memoryStreams.get(key).push({
-      id: Date.now() + "-" + Math.random().toString(36).substr(2, 4),
-      chunk,
-    });
+    this.memoryStreams.get(streamId).push(event);
   }
-  // BKAV HaiHS : Them mot chunk moi vao Redis Stream hoac bo nho tam - end
+  // BKAV HaiHS : Ghi chunk vao Redis Stream va dat TTL 20 phut - end
 
-  // BKAV HaiHS : Kiểm tra xem Stream có tồn tại không - start
-  async hasStream(conversationId) {
-    const key = `stream:conversation:${conversationId}`;
+  // BKAV HaiHS : Phat chunk qua Redis Pub/Sub - start
+  async publishChunk(streamId, event) {
+    const channel = `stream:${streamId}:events`;
     if (this.isRedisConnected) {
       try {
-        const exists = await this.redis.exists(key);
+        await this.ioredisClient.publish(channel, JSON.stringify(event));
+        return;
+      } catch (e) {
+        // Bỏ qua lỗi publish
+      }
+    }
+  }
+  // BKAV HaiHS : Phat chunk qua Redis Pub/Sub - end
+
+  // BKAV HaiHS : Dang ky lang nghe kenh Pub/Sub dua tren 1 ket noi chung - start
+  async subscribeToChannel(streamId, callback) {
+    const channel = `stream:${streamId}:events`;
+    if (this.isRedisConnected) {
+      try {
+        await this.subscriberClient.subscribe(channel);
+        const handler = (ch, message) => {
+          if (ch === channel) {
+            try {
+              const event = JSON.parse(message);
+              callback(event);
+            } catch (e) {
+              // Bỏ qua lỗi parse
+            }
+          }
+        };
+        this.subscriberClient.on("message", handler);
+        // Trả về hàm unsubscribe để cleanup sau
+        return async () => {
+          this.subscriberClient.off("message", handler);
+          try {
+            await this.subscriberClient.unsubscribe(channel);
+          } catch (e) {
+            // Bỏ qua lỗi unsubscribe
+          }
+        };
+      } catch (e) {
+        // Bỏ qua lỗi subscribe
+      }
+    }
+    // Fallback: trả về hàm unsubscribe rỗng
+    return async () => {};
+  }
+  // BKAV HaiHS : Dang ky lang nghe kenh Pub/Sub dua tren 1 ket noi chung - end
+
+  // BKAV HaiHS : Kiem tra stream co ton tai khong - start
+  async hasStream(streamId) {
+    const streamKey = `stream:${streamId}:chunks`;
+    if (this.isRedisConnected) {
+      try {
+        const exists = await this.ioredisClient.exists(streamKey);
         return exists === 1;
       } catch (e) {
         // Tự động bỏ qua lỗi và chuyển sang bộ nhớ tạm
       }
     }
-    return this.memoryStreams.has(key);
+    return this.memoryStreams.has(streamId);
   }
-  // BKAV HaiHS : Kiểm tra xem Stream có tồn tại không - end
+  // BKAV HaiHS : Kiem tra stream co ton tai khong - end
 
-  // BKAV HaiHS : Doc toan bo cac chunk da luu trong Stream - start
-  async readAll(conversationId) {
-    const key = `stream:conversation:${conversationId}`;
-    const chunks = [];
+  // BKAV HaiHS : Doc toan bo lich su chunk tu Redis Stream bang XRANGE - start
+  async getChunks(streamId) {
+    const streamKey = `stream:${streamId}:chunks`;
+    const events = [];
+
     if (this.isRedisConnected) {
       try {
-        const results = await this.redis.xread("STREAMS", key, "0");
-        if (results && results.length > 0) {
-          const streamData = results[0][1];
-          for (const item of streamData) {
-            const fields = item[1];
-            for (let i = 0; i < fields.length; i += 2) {
-              if (fields[i] === "chunk") {
-                chunks.push(fields[i + 1]);
+        // XRANGE lấy toàn bộ từ đầu đến cuối
+        const results = await this.ioredisClient.xrange(streamKey, "-", "+");
+        for (const [, fields] of results) {
+          for (let i = 0; i < fields.length; i += 2) {
+            if (fields[i] === "data") {
+              try {
+                events.push(JSON.parse(fields[i + 1]));
+              } catch (e) {
+                // Bỏ qua dòng lỗi parse
               }
             }
           }
         }
-        return chunks;
+        return events;
       } catch (e) {
         // Tự động bỏ qua lỗi và chuyển sang bộ nhớ tạm
       }
     }
 
-    const memList = this.memoryStreams.get(key) || [];
-    return memList.map((item) => item.chunk);
+    return this.memoryStreams.get(streamId) || [];
   }
-  // BKAV HaiHS : Doc toan bo cac chunk da luu trong Stream - end
+  // BKAV HaiHS : Doc toan bo lich su chunk tu Redis Stream bang XRANGE - end
 
-  // BKAV HaiHS : Đọc các chunk mới từ một ID nhất định - start
-  async readNext(conversationId, lastId, blockMs = 0) {
-    const key = `stream:conversation:${conversationId}`;
+  // BKAV HaiHS : Phat tin hieu HUY cheo may chu qua Pub/Sub - start
+  async publishAbort(streamId) {
+    const channel = `stream:${streamId}:events`;
     if (this.isRedisConnected) {
       try {
-        let results;
-        if (blockMs > 0) {
-          results = await this.redis.xread(
-            "BLOCK",
-            blockMs,
-            "STREAMS",
-            key,
-            lastId,
-          );
-        } else {
-          results = await this.redis.xread("STREAMS", key, lastId);
-        }
-
-        const chunks = [];
-        let nextLastId = lastId;
-
-        if (results && results.length > 0) {
-          const streamData = results[0][1];
-          if (streamData.length > 0) {
-            for (const item of streamData) {
-              const entryId = item[0];
-              nextLastId = entryId;
-              const fields = item[1];
-              for (let i = 0; i < fields.length; i += 2) {
-                if (fields[i] === "chunk") {
-                  chunks.push({ id: entryId, chunk: fields[i + 1] });
-                }
-              }
-            }
-          }
-        }
-        return { chunks, lastId: nextLastId };
+        await this.ioredisClient.publish(
+          channel,
+          JSON.stringify({ type: "ABORT" }),
+        );
       } catch (e) {
-        // Tự động bỏ qua lỗi và chuyển sang bộ nhớ tạm
+        // Bỏ qua lỗi publish
       }
     }
-
-    const memList = this.memoryStreams.get(key) || [];
-    const chunks = [];
-    let nextLastId = lastId;
-
-    const startIndex = memList.findIndex((item) => item.id === lastId);
-    const sliceStart = startIndex === -1 ? 0 : startIndex + 1;
-    const newItems = memList.slice(sliceStart);
-
-    for (const item of newItems) {
-      chunks.push({ id: item.id, chunk: item.chunk });
-      nextLastId = item.id;
-    }
-
-    if (blockMs > 0 && chunks.length === 0) {
-      await new Promise((resolve) => setTimeout(resolve, blockMs));
-    }
-
-    return { chunks, lastId: nextLastId };
   }
-  // BKAV HaiHS : Đọc các chunk mới từ một ID nhất định - end
+  // BKAV HaiHS : Phat tin hieu HUY cheo may chu qua Pub/Sub - end
+
+  // BKAV HaiHS : Dat co trang thai stream active phan tan tren Redis - start
+  async setStreamActive(streamId) {
+    const activeKey = `stream:${streamId}:active`;
+    if (this.isRedisConnected) {
+      try {
+        await this.ioredisClient.set(activeKey, "1", "EX", 1200); // TTL 20 phút
+        return;
+      } catch (e) {
+        // Bỏ qua lỗi Redis
+      }
+    }
+  }
+
+  async clearStreamActive(streamId) {
+    const activeKey = `stream:${streamId}:active`;
+    if (this.isRedisConnected) {
+      try {
+        await this.ioredisClient.del(activeKey);
+        return;
+      } catch (e) {
+        // Bỏ qua lỗi Redis
+      }
+    }
+  }
+
+  async isStreamActive(streamId) {
+    const activeKey = `stream:${streamId}:active`;
+    const streamKey = `stream:${streamId}:chunks`;
+    if (this.isRedisConnected) {
+      try {
+        const [activeExists, streamExists] = await Promise.all([
+          this.ioredisClient.exists(activeKey),
+          this.ioredisClient.exists(streamKey),
+        ]);
+        return activeExists === 1 || streamExists === 1;
+      } catch (e) {
+        // Bỏ qua lỗi Redis
+      }
+    }
+    return this.memoryStreams.has(streamId);
+  }
+  // BKAV HaiHS : Dat co trang thai stream active phan tan tren Redis - end
 
   // BKAV HaiHS : Xoa bo Stream khi hoan tat cuoc goi - start
-  async deleteStream(conversationId) {
-    const key = `stream:conversation:${conversationId}`;
+  async deleteStream(streamId) {
+    const streamKey = `stream:${streamId}:chunks`;
+    const seqKey = `stream:${streamId}:seq`;
+    const activeKey = `stream:${streamId}:active`;
+    // BKAV HaiHS : Xoa bo dem so thu tu cuc bo cung voi stream - start
+    this.localSeqCounters.delete(streamId);
+    // BKAV HaiHS : Xoa bo dem so thu tu cuc bo cung voi stream - end
     if (this.isRedisConnected) {
       try {
-        await this.redis.del(key);
+        await this.ioredisClient.del(streamKey, seqKey, activeKey);
         return;
       } catch (e) {
         // Tự động bỏ qua lỗi và chuyển sang bộ nhớ tạm
       }
     }
-    this.memoryStreams.delete(key);
+    this.memoryStreams.delete(streamId);
   }
   // BKAV HaiHS : Xoa bo Stream khi hoan tat cuoc goi - end
 }
