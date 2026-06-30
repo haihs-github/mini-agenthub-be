@@ -249,22 +249,43 @@ class AIStreamManager {
   // BKAV HaiHS : Ket noi lai theo quy trinh 3 buoc: Subscribe Truoc - Query Sau - Flush - start
   async subscribeWithResume(streamId, res) {
     let connectionIsOpen = true;
+    // BKAV HaiHS : Co trang thai: false = dang buffer, true = gui truc tiep xuong FE - start
+    let isSynced = false;
+    let syncedSeq = 0;
+    // BKAV HaiHS : Co trang thai: false = dang buffer, true = gui truc tiep xuong FE - end
+    const liveBuffer = [];
 
-    res.on("close", () => {
-      connectionIsOpen = false;
-    });
-
-    // Buoc 1: SUBSCRIBE TRUOC - Hang so cac live token vao ReorderBuffer tam thoi
-    // Dam bao khong mat token nao trong khoang thoi gian Query lich su
-    const liveBuffer = []; // Bo dem tam thoi cho cac token nhan duoc truoc khi sync
-
-    let unsubscribe = await redisStreamService.subscribeToChannel(
+    // BKAV HaiHS : Mot subscription duy nhat, khong bao gio unsubscribe giua chung - start
+    // Khi isSynced=false: buffer cac event vao liveBuffer
+    // Khi isSynced=true: gui truc tiep xuong FE ngay lap tuc
+    const unsubscribe = await redisStreamService.subscribeToChannel(
       streamId,
       (event) => {
         if (!connectionIsOpen) return;
-        liveBuffer.push(event);
+        if (!isSynced) {
+          // Che do buffer: giu lai cho den khi dong bo lich su xong
+          liveBuffer.push(event);
+          return;
+        }
+        // Che do truc tiep: gui xuong FE ngay
+        if (event.type === "DONE" || event.type === "ABORT") {
+          res.write("data: [DONE]\n\n");
+          res.end();
+          connectionIsOpen = false;
+          return;
+        }
+        if (event.type === "chunk" && event.seq >= syncedSeq) {
+          const payload = { content: event.content };
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        }
       },
     );
+    // BKAV HaiHS : Mot subscription duy nhat, khong bao gio unsubscribe giua chung - end
+
+    res.on("close", async () => {
+      connectionIsOpen = false;
+      await unsubscribe();
+    });
 
     // Buoc 2: QUERY LICH SU - Doc toan bo chunk da luu tu Redis Stream
     let historyEvents = [];
@@ -274,16 +295,17 @@ class AIStreamManager {
       // Neu loi thi bo qua lich su
     }
 
-    // Kiem tra neu stream khong ton tai va khong co lich su
+    // BKAV HaiHS : Kiem tra xem luong co dang active khong bang co trang thai Redis - start
     if (historyEvents.length === 0 && liveBuffer.length === 0) {
-      const hasStream = await redisStreamService.hasStream(streamId);
-      if (!hasStream) {
+      const stillActive = await redisStreamService.isStreamActive(streamId);
+      if (!stillActive) {
         await unsubscribe();
         res.write("data: [DONE]\n\n");
         res.end();
         return;
       }
     }
+    // BKAV HaiHS : Kiem tra xem luong co dang active khong bang co trang thai Redis - end
 
     // Buoc 3: GUI LICH SU va DONG BO seq
     // BKAV HaiHS : Gui toan bo lich su ve FE bang 1 su kien sync duy nhat - start
@@ -294,16 +316,14 @@ class AIStreamManager {
     const fullHistoryText = historyChunks.map((e) => e.content).join("");
     const historyDone = historyEvents.some((e) => e.type === "DONE");
 
-    if (fullHistoryText) {
+    if (fullHistoryText && connectionIsOpen) {
       // Phat mot su kien sync duy nhat chua toan bo lich su
       const syncPayload = {
         sync: true,
         content: fullHistoryText,
         resumeFromSeq: historyChunks.length,
       };
-      if (connectionIsOpen) {
-        res.write(`data: ${JSON.stringify(syncPayload)}\n\n`);
-      }
+      res.write(`data: ${JSON.stringify(syncPayload)}\n\n`);
     }
     // BKAV HaiHS : Gui toan bo lich su ve FE bang 1 su kien sync duy nhat - end
 
@@ -317,17 +337,13 @@ class AIStreamManager {
       return;
     }
 
-    // Dong bo nextSeq: bo qua tat ca cac live token co seq <= lich su da gui
-    const syncedSeq = historyChunks.length;
+    // Dong bo seq: chi chap nhan live token co seq >= so chunk lich su da gui
+    syncedSeq = historyChunks.length;
 
-    // BKAV HaiHS : Flush ReorderBuffer - Xa cac live token dang cho - start
-    // Xu ly cac token da nam trong liveBuffer truoc khi ket thuc sync
-    const pendingLive = [...liveBuffer];
-    liveBuffer.length = 0; // Xoa buffer tam thoi
-
-    for (const event of pendingLive) {
+    // BKAV HaiHS : Flush liveBuffer: xu ly cac event da buffer trong khi dang query lich su - start
+    for (const event of liveBuffer) {
       if (!connectionIsOpen) break;
-      if (event.type === "DONE") {
+      if (event.type === "DONE" || event.type === "ABORT") {
         await unsubscribe();
         res.write("data: [DONE]\n\n");
         res.end();
@@ -338,43 +354,12 @@ class AIStreamManager {
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
       }
     }
-    // BKAV HaiHS : Flush ReorderBuffer - Xa cac live token dang cho - end
+    // BKAV HaiHS : Flush liveBuffer: xu ly cac event da buffer trong khi dang query lich su - end
 
-    // Chuyen che do: Tu nay nhan truc tiep tu Pub/Sub va day xuong FE ngay lap tuc
-    // BKAV HaiHS : Lang nghe cac chunk tiep theo qua Pub/Sub realtime - start
-    await unsubscribe(); // Huy subscribe cu
-
-    unsubscribe = await redisStreamService.subscribeToChannel(
-      streamId,
-      (event) => {
-        if (!connectionIsOpen) return;
-        if (event.type === "DONE") {
-          res.write("data: [DONE]\n\n");
-          res.end();
-          connectionIsOpen = false;
-          unsubscribe();
-          return;
-        }
-        if (event.type === "ABORT") {
-          res.write("data: [DONE]\n\n");
-          res.end();
-          connectionIsOpen = false;
-          unsubscribe();
-          return;
-        }
-        if (event.type === "chunk" && event.seq >= syncedSeq) {
-          const payload = { content: event.content };
-          res.write(`data: ${JSON.stringify(payload)}\n\n`);
-        }
-      },
-    );
-    // BKAV HaiHS : Lang nghe cac chunk tiep theo qua Pub/Sub realtime - end
-
-    // Khi client dong ket noi thi cleanup
-    res.on("close", async () => {
-      connectionIsOpen = false;
-      await unsubscribe();
-    });
+    // BKAV HaiHS : Bat co isSynced = true de chuyen sang che do gui truc tiep - start
+    // Tu diem nay, moi event moi tu Pub/Sub se duoc gui thang xuong FE trong callback
+    isSynced = true;
+    // BKAV HaiHS : Bat co isSynced = true de chuyen sang che do gui truc tiep - end
   }
   // BKAV HaiHS : Ket noi lai theo quy trinh 3 buoc: Subscribe Truoc - Query Sau - Flush - end
 
@@ -398,6 +383,7 @@ class AIStreamManager {
     return await redisStreamService.isStreamActive(streamId);
   }
   // BKAV HaiHS : Kiem tra luong stream co dang active khong (Thuan Redis Distributed) - end
+
 }
 
 module.exports = new AIStreamManager();

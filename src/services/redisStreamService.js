@@ -7,6 +7,8 @@ class RedisStreamService {
     this.ioredisClient = null; // Client ghi/đọc thông thường
     this.subscriberClient = null; // Client chuyên dụng cho Pub/Sub
     this.memoryStreams = new Map(); // Fallback khi Redis mất kết nối
+    this.memoryActiveFlags = new Set(); // Fallback cho stream active flags
+    this.memorySubscribers = new Map(); // Fallback cho Pub/Sub subscribers
     // BKAV HaiHS : Bo dem so thu tu cuc bo phong khi Redis mat ket noi - start
     this.localSeqCounters = new Map(); // streamId -> so nguyen tang dan
     // BKAV HaiHS : Bo dem so thu tu cuc bo phong khi Redis mat ket noi - end
@@ -98,6 +100,14 @@ class RedisStreamService {
         // Bỏ qua lỗi publish
       }
     }
+    // BKAV HaiHS : Fallback memory Pub/Sub khi Redis mat ket noi - start
+    const handlers = this.memorySubscribers.get(channel);
+    if (handlers) {
+      for (const cb of handlers) {
+        try { cb(event); } catch (e) {}
+      }
+    }
+    // BKAV HaiHS : Fallback memory Pub/Sub khi Redis mat ket noi - end
   }
   // BKAV HaiHS : Phat chunk qua Redis Pub/Sub - end
 
@@ -131,8 +141,16 @@ class RedisStreamService {
         // Bỏ qua lỗi subscribe
       }
     }
-    // Fallback: trả về hàm unsubscribe rỗng
-    return async () => {};
+    // BKAV HaiHS : Fallback memory Pub/Sub khi Redis mat ket noi - start
+    // channel da duoc khai bao o dau ham, dung lai truc tiep
+    const handlers = this.memorySubscribers.get(channel) || new Set();
+    handlers.add(callback);
+    this.memorySubscribers.set(channel, handlers);
+    return async () => {
+      handlers.delete(callback);
+      if (handlers.size === 0) this.memorySubscribers.delete(channel);
+    };
+    // BKAV HaiHS : Fallback memory Pub/Sub khi Redis mat ket noi - end
   }
   // BKAV HaiHS : Dang ky lang nghe kenh Pub/Sub dua tren 1 ket noi chung - end
 
@@ -208,6 +226,9 @@ class RedisStreamService {
         // Bỏ qua lỗi Redis
       }
     }
+    // BKAV HaiHS : Fallback memory khi Redis mat ket noi - start
+    this.memoryActiveFlags.add(streamId);
+    // BKAV HaiHS : Fallback memory khi Redis mat ket noi - end
   }
 
   async clearStreamActive(streamId) {
@@ -220,23 +241,25 @@ class RedisStreamService {
         // Bỏ qua lỗi Redis
       }
     }
+    this.memoryActiveFlags.delete(streamId);
   }
 
   async isStreamActive(streamId) {
     const activeKey = `stream:${streamId}:active`;
-    const streamKey = `stream:${streamId}:chunks`;
     if (this.isRedisConnected) {
       try {
         const [activeExists, streamExists] = await Promise.all([
           this.ioredisClient.exists(activeKey),
-          this.ioredisClient.exists(streamKey),
+          this.ioredisClient.exists(`stream:${streamId}:chunks`),
         ]);
         return activeExists === 1 || streamExists === 1;
       } catch (e) {
         // Bỏ qua lỗi Redis
       }
     }
-    return this.memoryStreams.has(streamId);
+    // BKAV HaiHS : Fallback memory: kiem tra ca flag va chunks - start
+    return this.memoryActiveFlags.has(streamId) || this.memoryStreams.has(streamId);
+    // BKAV HaiHS : Fallback memory: kiem tra ca flag va chunks - end
   }
   // BKAV HaiHS : Dat co trang thai stream active phan tan tren Redis - end
 
@@ -257,6 +280,7 @@ class RedisStreamService {
       }
     }
     this.memoryStreams.delete(streamId);
+    this.memoryActiveFlags.delete(streamId);
   }
   // BKAV HaiHS : Xoa bo Stream khi hoan tat cuoc goi - end
 }

@@ -161,7 +161,7 @@ class ConversationController {
   }
   // BKAV HaiHS : Xóa conversations - end
 
-  // BKAV HaiHS : Tiep nhan yeu cau chat va khoi chay luong stream AI chay ngam - start
+  // BKAV HaiHS : luồng nhận chữ thời gian thực sse - start
   async handleChat(req, res, next) {
     try {
       const userId = parseInt(req.userId);
@@ -213,7 +213,7 @@ class ConversationController {
       next(error);
     }
   }
-  // BKAV HaiHS : Tiep nhan yeu cau chat va khoi chay luong stream AI chay ngam - end
+  // BKAV HaiHS : luồng nhận chữ thời gian thực sse - end
 
   // BKAV HaiHS : Dang ky ket noi lai vao luong stream dang chay - start
   async handleStreamReconnect(req, res, next) {
@@ -232,14 +232,9 @@ class ConversationController {
       res.setHeader("X-Accel-Buffering", "no");
       // BKAV HaiHS : Tat buffering cua Nginx de SSE truyen ngay lap tuc - end
 
-      // BKAV HaiHS : Ho tro tham so ?resume=true de ket noi lai theo quy trinh 3 buoc - start
-      const isResume = req.query.resume === "true";
-      if (isResume) {
-        await aiStreamManager.subscribeWithResume(conversationId, res);
-      } else {
-        await aiStreamManager.connectClient(conversationId, res);
-      }
-      // BKAV HaiHS : Ho tro tham so ?resume=true de ket noi lai theo quy trinh 3 buoc - end
+      // BKAV HaiHS : Ket noi lai theo quy trinh 3 buoc Subscribe-Query-Flush qua Redis - start
+      await aiStreamManager.subscribeWithResume(conversationId, res);
+      // BKAV HaiHS : Ket noi lai theo quy trinh 3 buoc Subscribe-Query-Flush qua Redis - end
     } catch (error) {
       next(error);
     }
