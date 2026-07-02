@@ -53,9 +53,17 @@ class AIStreamManager {
     await redisStreamService.setStreamActive(streamId);
 
     (async () => {
-      // lấy state của luồng từ map streams để sử dụng trong vòng lặp
+      let unsubscribeControl;
       const state = streams.get(streamId);
       try {
+        // BKAV HaiHS : Dang ky lang nghe tin hieu ABORT tu Redis Pub/Sub cheo may chu - start
+        unsubscribeControl = await redisStreamService.subscribeToChannel(streamId, (event) => {
+          if (event.type === "ABORT") {
+            abortController.abort();
+          }
+        });
+        // BKAV HaiHS : Dang ky lang nghe tin hieu ABORT tu Redis Pub/Sub cheo may chu - end
+
         // Khởi tạo luồng AI từ model được cung cấp, truyền vào abortController.signal để có thể hủy bỏ khi cần
         const stream = await chatModelPromise(abortController.signal);
 
@@ -201,6 +209,15 @@ class AIStreamManager {
       } finally {
         const finalState = streams.get(streamId);
         if (finalState) finalState.isFinished = true;
+        // BKAV HaiHS : Huy dang ky lang nghe tin hieu dieu khien khi stream ket thuc - start
+        if (unsubscribeControl) {
+          try {
+            await unsubscribeControl();
+          } catch (e) {
+            // Im lang bo qua
+          }
+        }
+        // BKAV HaiHS : Huy dang ky lang nghe tin hieu dieu khien khi stream ket thuc - end
         await redisStreamService.deleteStream(streamId);
         streams.delete(streamId);
       }
