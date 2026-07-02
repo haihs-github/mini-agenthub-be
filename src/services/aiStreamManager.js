@@ -170,6 +170,17 @@ class AIStreamManager {
               conversationId: streamId,
             });
           }
+          // Dong tat ca cac ket noi HTTP SSE cuc bo khi bi huy luong
+          if (currentState) {
+            const doneEvent = { type: "DONE" };
+            for (const handler of currentState.clientHandlers) {
+              try {
+                handler(doneEvent);
+              } catch (e) {
+                // Bỏ qua lỗi gửi
+              }
+            }
+          }
         } else {
           // gửi lỗi
           const errorEvent = { type: "ERROR", message: err.message };
