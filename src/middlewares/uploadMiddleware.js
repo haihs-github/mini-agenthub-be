@@ -1,3 +1,5 @@
+// middlware multer cấu hình tải ảnh
+
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");

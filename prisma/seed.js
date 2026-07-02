@@ -1,3 +1,4 @@
+// file seed data dữ liệu mẫu nhưng ít hơn
 require("dotenv").config();
 
 const { PrismaClient } = require("@prisma/client");

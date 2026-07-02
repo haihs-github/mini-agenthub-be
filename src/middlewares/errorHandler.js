@@ -4,8 +4,8 @@ const errorHandler = (err, req, res, next) => {
   if (err.isOperational) {
     return res.status(err.statusCode).json({
       status: "fail",
-      code: err.errorCode, // Mã lỗi định danh (Frontend rất thích điều này để rẽ nhánh UI)
-      message: err.message, // Message sạch, thân thiện với người dùng
+      code: err.errorCode, // Mã lỗi định danh
+      message: err.message, // Message sạch
     });
   }
 
@@ -13,7 +13,7 @@ const errorHandler = (err, req, res, next) => {
   // Log toàn bộ Stack Trace chi tiết ra Console
   console.error("LỖI HỆ THỐNG NGHIÊM TRỌNG (500):", err);
 
-  // GIẤU BIỆT thông tin chi tiết lỗi với Client để bảo mật (Tránh rò rỉ cấu trúc DB hoặc logic nội bộ)
+  // giảú lỗi với người dùng
   return res.status(500).json({
     status: "error",
     code: "INTERNAL_SERVER_ERROR",

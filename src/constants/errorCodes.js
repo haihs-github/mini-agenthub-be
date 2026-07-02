@@ -1,3 +1,6 @@
+//  file chứa các mã lỗi hệ thống do mình quản lý
+
+// BKAV HaiHS : Các mã lỗi hệ thống do mình quản lý - start
 const ERROR_CODES = {
   AUTH: {
     INVALID_CREDENTIALS: {
@@ -43,5 +46,6 @@ const ERROR_CODES = {
     },
   },
 };
+// BKAV HaiHS : Các mã lỗi hệ thống do mình quản lý - start
 
 module.exports = ERROR_CODES;

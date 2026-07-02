@@ -1,3 +1,4 @@
+// định nghĩa csdl PostgreSQL 
 generator client {
   provider = "prisma-client-js"
 }

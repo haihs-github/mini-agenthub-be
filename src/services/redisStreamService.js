@@ -3,16 +3,15 @@ const Redis = require("ioredis");
 // BKAV HaiHS : Khoi tao 2 ket noi Redis rieng biet - start
 class RedisStreamService {
   constructor() {
-    this.isRedisConnected = false;
-    this.ioredisClient = null; // Client ghi/đọc thông thường
-    this.subscriberClient = null; // Client chuyên dụng cho Pub/Sub
-    this.memoryStreams = new Map(); // Fallback khi Redis mất kết nối
-    this.memoryActiveFlags = new Set(); // Fallback cho stream active flags
+    this.isRedisConnected = false; // biến kiểm tra xem đã kết nối redis chưa
+    this.ioredisClient = null; // kết nối cho ghi/đọc thông thường
+    this.subscriberClient = null; // kết nối chuyên dụng cho Pub/Sub
+    this.memoryStreams = new Map(); // map lưu các chunk chữ của phòng chat trong RAM khi redis sập
+    this.memoryActiveFlags = new Set(); // Lưu các stream trong ram khi redis sập
     this.memorySubscribers = new Map(); // Fallback cho Pub/Sub subscribers
-    // BKAV HaiHS : Bo dem so thu tu cuc bo phong khi Redis mat ket noi - start
     this.localSeqCounters = new Map(); // streamId -> so nguyen tang dan
-    // BKAV HaiHS : Bo dem so thu tu cuc bo phong khi Redis mat ket noi - end
 
+    // BKAV HaiHS : Khởi tạo 2 kết nối đến redis - start
     try {
       const redisConfig = {
         host: process.env.REDIS_HOST,
@@ -20,7 +19,7 @@ class RedisStreamService {
         maxRetriesPerRequest: 1,
       };
 
-      // Kết nối 1: Client ghi/đọc thông thường
+      // Kết nối 1: luồng ghi/đọc thông thường
       this.ioredisClient = new Redis(redisConfig);
       this.ioredisClient.on("connect", () => {
         this.isRedisConnected = true;
@@ -29,7 +28,7 @@ class RedisStreamService {
         this.isRedisConnected = false;
       });
 
-      // Kết nối 2: Client chuyên dụng cho Subscribe (không dùng cho lệnh khác)
+      // Kết nối 2: luồng chuyên dụng cho Subscribe (không dùng cho lệnh khác)
       this.subscriberClient = new Redis(redisConfig);
       this.subscriberClient.on("error", () => {
         // Im lặng bắt lỗi kết nối subscriber
@@ -38,40 +37,38 @@ class RedisStreamService {
       this.isRedisConnected = false;
     }
   }
-  // BKAV HaiHS : Khoi tao 2 ket noi Redis rieng biet - end
+  // BKAV HaiHS : Khởi tạo 2 kết nối đến redis - end
 
-  // BKAV HaiHS : Cap so thu tu cho tung chunk de chong mat thu tu - start
+  // BKAV HaiHS : Cấp số thứ tự cho chunk để tránh mất số thứ tự - start
   async getNextSequence(streamId) {
     const seqKey = `stream:${streamId}:seq`;
     if (this.isRedisConnected) {
       try {
-        // BKAV HaiHS : Dung Pipeline de INCR + EXPIRE trong 1 round-trip duy nhat - start
+        // thiết lập key đếm số thứ tự cho chunk
         const pipeline = this.ioredisClient.pipeline();
         pipeline.incr(seqKey);
         pipeline.expire(seqKey, 86400); // TTL 24 gio
         const results = await pipeline.exec();
         const seq = results[0][1]; // Gia tri tra ve cua INCR
-        // BKAV HaiHS : Dung Pipeline de INCR + EXPIRE trong 1 round-trip duy nhat - end
         return seq - 1; // Bat dau tu 0
       } catch (e) {
         // Neu Redis loi thi roi xuong fallback cuc bo
       }
     }
-    // BKAV HaiHS : Fallback cuc bo: dung Map tang dan thay vi Date.now() de dam bao thu tu - start
+    // BKAV HaiHS : Fallback cuc bo: dung Map tang dan thay vi Date.now() de dam bao thu tu
     const current = this.localSeqCounters.get(streamId) || 0;
     this.localSeqCounters.set(streamId, current + 1);
     return current;
-    // BKAV HaiHS : Fallback cuc bo: dung Map tang dan thay vi Date.now() de dam bao thu tu - end
   }
-  // BKAV HaiHS : Cap so thu tu cho tung chunk de chong mat thu tu - end
 
-  // BKAV HaiHS : Ghi chunk vao Redis Stream va dat TTL 20 phut - start
+  //  BKAV HaiHS : ghi dữ liệu vào lịch sử chat - start
   async appendChunk(streamId, event) {
     const streamKey = `stream:${streamId}:chunks`;
     if (this.isRedisConnected) {
       try {
         // Dùng Pipeline để gửi XADD + EXPIRE trong một lần gọi duy nhất
         const pipeline = this.ioredisClient.pipeline();
+        // add chunk vừa nhận được vào stream
         pipeline.xadd(streamKey, "*", "data", JSON.stringify(event));
         pipeline.expire(streamKey, 1200); // TTL 20 phút
         await pipeline.exec();
@@ -87,10 +84,11 @@ class RedisStreamService {
     }
     this.memoryStreams.get(streamId).push(event);
   }
-  // BKAV HaiHS : Ghi chunk vao Redis Stream va dat TTL 20 phut - end
+  //  BKAV HaiHS : ghi dữ liệu vào lịch sử chat - start
 
-  // BKAV HaiHS : Phat chunk qua Redis Pub/Sub - start
+  // BKAV HaiHS : Phát chunk qua pub/sub - start
   async publishChunk(streamId, event) {
+    // xác định luồng stream và gửi chuỗi json lên
     const channel = `stream:${streamId}:events`;
     if (this.isRedisConnected) {
       try {
@@ -104,14 +102,16 @@ class RedisStreamService {
     const handlers = this.memorySubscribers.get(channel);
     if (handlers) {
       for (const cb of handlers) {
-        try { cb(event); } catch (e) {}
+        try {
+          cb(event);
+        } catch (e) {}
       }
     }
     // BKAV HaiHS : Fallback memory Pub/Sub khi Redis mat ket noi - end
   }
-  // BKAV HaiHS : Phat chunk qua Redis Pub/Sub - end
+  // BKAV HaiHS : Phát chunk qua pub/sub - end
 
-  // BKAV HaiHS : Dang ky lang nghe kenh Pub/Sub dua tren 1 ket noi chung - start
+  // BKAV HaiHS : Đăng ký kênh - start
   async subscribeToChannel(streamId, callback) {
     const channel = `stream:${streamId}:events`;
     if (this.isRedisConnected) {
@@ -152,9 +152,9 @@ class RedisStreamService {
     };
     // BKAV HaiHS : Fallback memory Pub/Sub khi Redis mat ket noi - end
   }
-  // BKAV HaiHS : Dang ky lang nghe kenh Pub/Sub dua tren 1 ket noi chung - end
+  // BKAV HaiHS : Đăng ký kênh - end
 
-  // BKAV HaiHS : Kiem tra stream co ton tai khong - start
+  // BKAV HaiHS : kiểm tra xem stream có tồn tại ko?- start
   async hasStream(streamId) {
     const streamKey = `stream:${streamId}:chunks`;
     if (this.isRedisConnected) {
@@ -167,9 +167,9 @@ class RedisStreamService {
     }
     return this.memoryStreams.has(streamId);
   }
-  // BKAV HaiHS : Kiem tra stream co ton tai khong - end
+  // BKAV HaiHS : kiểm tra xem stream có tồn tại ko?- end
 
-  // BKAV HaiHS : Doc toan bo lich su chunk tu Redis Stream bang XRANGE - start
+  // BKAV HaiHS : Đọc toàn bộ lịch sử bằng XRANGE - start
   async getChunks(streamId) {
     const streamKey = `stream:${streamId}:chunks`;
     const events = [];
@@ -197,9 +197,9 @@ class RedisStreamService {
 
     return this.memoryStreams.get(streamId) || [];
   }
-  // BKAV HaiHS : Doc toan bo lich su chunk tu Redis Stream bang XRANGE - end
+  // BKAV HaiHS : Đọc toàn bộ lịch sử bằng XRANGE - end
 
-  // BKAV HaiHS : Phat tin hieu HUY cheo may chu qua Pub/Sub - start
+  // BKAV HaiHS : Phát tín hiệu hủy bằng pub/sub - start
   async publishAbort(streamId) {
     const channel = `stream:${streamId}:events`;
     if (this.isRedisConnected) {
@@ -213,9 +213,9 @@ class RedisStreamService {
       }
     }
   }
-  // BKAV HaiHS : Phat tin hieu HUY cheo may chu qua Pub/Sub - end
+  // BKAV HaiHS : Phát tín hiệu hủy bằng pub/sub - end
 
-  // BKAV HaiHS : Dat co trang thai stream active phan tan tren Redis - start
+  // BKAV HaiHS : set stream active - start
   async setStreamActive(streamId) {
     const activeKey = `stream:${streamId}:active`;
     if (this.isRedisConnected) {
@@ -226,11 +226,11 @@ class RedisStreamService {
         // Bỏ qua lỗi Redis
       }
     }
-    // BKAV HaiHS : Fallback memory khi Redis mat ket noi - start
     this.memoryActiveFlags.add(streamId);
-    // BKAV HaiHS : Fallback memory khi Redis mat ket noi - end
   }
+  // BKAV HaiHS : set stream active - end
 
+  // BKAV HaiHS : xóa trạng thái stream active - start
   async clearStreamActive(streamId) {
     const activeKey = `stream:${streamId}:active`;
     if (this.isRedisConnected) {
@@ -243,7 +243,9 @@ class RedisStreamService {
     }
     this.memoryActiveFlags.delete(streamId);
   }
+  // BKAV HaiHS : xóa trạng thái stream active - end
 
+  // BkAV HaiHS : kiểm tra xem stream có đang active ko? - start
   async isStreamActive(streamId) {
     const activeKey = `stream:${streamId}:active`;
     if (this.isRedisConnected) {
@@ -257,32 +259,28 @@ class RedisStreamService {
         // Bỏ qua lỗi Redis
       }
     }
-    // BKAV HaiHS : Fallback memory: kiem tra ca flag va chunks - start
-    return this.memoryActiveFlags.has(streamId) || this.memoryStreams.has(streamId);
-    // BKAV HaiHS : Fallback memory: kiem tra ca flag va chunks - end
+    return (
+      this.memoryActiveFlags.has(streamId) || this.memoryStreams.has(streamId)
+    );
   }
-  // BKAV HaiHS : Dat co trang thai stream active phan tan tren Redis - end
+  // BKAV HaiHS : xóa trạng thái stream active - end
 
-  // BKAV HaiHS : Xoa bo Stream khi hoan tat cuoc goi - start
+  // BKAV HaiHS : Xóa hoàn toàn stream sau khi chat xong - start
   async deleteStream(streamId) {
     const streamKey = `stream:${streamId}:chunks`;
     const seqKey = `stream:${streamId}:seq`;
     const activeKey = `stream:${streamId}:active`;
-    // BKAV HaiHS : Xoa bo dem so thu tu cuc bo cung voi stream - start
     this.localSeqCounters.delete(streamId);
-    // BKAV HaiHS : Xoa bo dem so thu tu cuc bo cung voi stream - end
     if (this.isRedisConnected) {
       try {
         await this.ioredisClient.del(streamKey, seqKey, activeKey);
         return;
-      } catch (e) {
-        // Tự động bỏ qua lỗi và chuyển sang bộ nhớ tạm
-      }
+      } catch (e) {}
     }
     this.memoryStreams.delete(streamId);
     this.memoryActiveFlags.delete(streamId);
   }
-  // BKAV HaiHS : Xoa bo Stream khi hoan tat cuoc goi - end
+  // BKAV HaiHS : Xóa hoàn toàn stream sau khi chat xong - end
 }
 
 module.exports = new RedisStreamService();

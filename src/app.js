@@ -1,3 +1,4 @@
+// file khởi tạo và cấu hình ứng dụng express (Middleware, CORS, Route mapping)
 const express = require("express");
 const cors = require("cors");
 const authRoutes = require("./routes/authRoutes");

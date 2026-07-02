@@ -1,36 +1,40 @@
+// Controller quant lý đăng nhập và đổi mật khẩu
+
 const authService = require("../services/authService");
 
 class AuthController {
   //  BKAV HaiHS : xử lý đăng nhập - start
   async login(req, res, next) {
     try {
-      // 1. Lấy dữ liệu từ Client
+      // Lấy dữ liệu từ req
       const { email, password } = req.body;
 
       // Validate cơ bản (Có thể dùng thư viện Zod sau này)
       if (!email || !password) {
+        // kiểm tra thiếu email hay password ko?
         return res
           .status(400)
           .json({ message: "Vui lòng nhập đầy đủ Email và Mật khẩu" });
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // định dạng cho email
       if (!emailRegex.test(email)) {
+        // kiểm tra email đúng định dạng ko?
         return res
           .status(400)
           .json({ message: "Định dạng Email không hợp lệ!" });
       }
 
-      // 2. Giao việc cho Service
+      // gửi email & password xuống hàm login của authService
       const result = await authService.login(email, password);
 
-      // 3. Trả Response thành công
+      // Trả Response cho người dùng
       res.status(200).json({
         message: "Đăng nhập thành công!",
         data: result,
       });
     } catch (error) {
-      // Nếu Service ném ra lỗi, chuyển thẳng lỗi đó đến Middleware Error Handler
+      // chuyển lỗi đó đến Middleware Error Handler
       next(error);
     }
   }
@@ -39,9 +43,11 @@ class AuthController {
   // BKAV HaiHS : xử lý đổi mật khẩu - start
   async changePassword(req, res, next) {
     try {
+      // lấy dữ liệu từ req
       const { oldPassword, newPassword } = req.body;
-      const userId = req.userId; // Lấy từ Middleware authMiddleware truyền qua
+      const userId = req.userId;
 
+      //  kiểm tra thiếu mật khẩu cũ hoặc mới ko?
       if (!oldPassword || !newPassword) {
         return res.status(400).json({
           message: "Vui lòng nhập đầy đủ mật khẩu cũ và mật khẩu mới!",
@@ -54,9 +60,10 @@ class AuthController {
         });
       }
 
-      // Giao việc cho Service xử lý
+      // Chuyển dữ liệu xuống hàm changePassword của authService để xử lý
       await authService.changePassword(userId, oldPassword, newPassword);
 
+      // trả lại response cho người dùng
       res.status(200).json({
         message:
           "Đổi mật khẩu thành công! Vui lòng dùng mật khẩu mới cho lần đăng nhập sau.",

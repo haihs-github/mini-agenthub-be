@@ -1,3 +1,5 @@
+//  khởi chạy server express
+
 // Nếu dùng dotenv để đọc file .env
 require("dotenv").config();
 

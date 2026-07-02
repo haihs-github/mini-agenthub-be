@@ -21,13 +21,18 @@ class AiService {
       return await this.getFlowiseStream(prompt, historyMessages, signal);
     }
 
-    return await this.getLangChainStream(modelName, prompt, historyMessages, signal);
+    return await this.getLangChainStream(
+      modelName,
+      prompt,
+      historyMessages,
+      signal,
+    );
   }
   // BKAV HaiHS : Dieu huong luong stream AI theo tung loai model - end
 
-  // BKAV HaiHS : Lay luong stream tu LangChain va truyen tin hieu dung - start
+  // BKAV HaiHS : lấy luồng steam từ langchain - start
   async getLangChainStream(modelName, prompt, historyMessages, signal) {
-    // 1. KHỞI TẠO FACTORY MODEL
+    // Khởi tạo các model LangChain với các tham số cần thiết
     const chatModel = new ChatGroq({
       apiKey: process.env.GROQ_API_KEY,
       model: modelName,
@@ -39,10 +44,12 @@ class AiService {
       return `data:${fileType};base64,${fileBuffer.toString("base64")}`;
     };
 
-    // 2. CHUẨN HÓA LỊCH SỬ CHAT SANG ĐỐI TƯỢNG MESSAGE CỦA LANGCHAIN
+    // chuẩn hóa lịch sử chat sang định dạng message của langchain
     const formattedMessages = historyMessages.map((msg) => {
+      // trường role để biết tin nhắn của user hay ai
       const isUser = msg.role === "user";
 
+      // Nếu tin nhắn có ảnh đính kèm, chuyển đổi sang định dạng { type: "image_url", image_url: { url: "..." } }
       if (msg.attachments && msg.attachments.length > 0) {
         const contentArray = [{ type: "text", text: msg.content }];
         msg.attachments.forEach((att) => {
@@ -53,21 +60,22 @@ class AiService {
             },
           });
         });
-
+        // Trả về HumanMessage hoặc AIMessage
         return isUser
           ? new HumanMessage({ content: contentArray })
           : new AIMessage({ content: contentArray });
       }
-
+      // trả về HumanMessage hoặc AIMessage
       return isUser
         ? new HumanMessage(msg.content)
         : new AIMessage(msg.content);
     });
 
-    // 3. XỬ LÝ CÂU HỎI HIỆN TẠI VÀ ĐẨY VÀO CUỐI NGỮ CẢNH
-    const currentMessage = historyMessages[historyMessages.length - 1];
+    // xử lý câu hỏi hiện tại và ngữ cảnh
+    const currentMessage = historyMessages[historyMessages.length - 1]; // Lấy tin nhắn cuối cùng trong lịch sử để làm ngữ cảnh
     let currentContent;
 
+    //  lấy ảnh đính kèm làm ngữ cảnh
     if (
       currentMessage &&
       currentMessage.attachments &&
@@ -86,12 +94,12 @@ class AiService {
       currentContent = prompt;
     }
 
+    // thêm câu hỏi hiện tại vào cuối mảng formattedMessages để gửi cho model
     formattedMessages.push(new HumanMessage({ content: currentContent }));
 
-    // 4. BỘ LỌC GIỚI HẠN TỐI ĐA 5 ẢNH
+    // lấy tối đa 5 ảnh đính kèm gần nhất trong lịch sử
     const maxAllowedImages = 5;
     let totalDetectedImages = 0;
-
     for (let i = formattedMessages.length - 1; i >= 0; i--) {
       if (Array.isArray(formattedMessages[i].content)) {
         const optimizedContent = [];
@@ -110,10 +118,12 @@ class AiService {
       }
     }
 
-    // 5. KÍCH HOẠT LUỒNG STREAM TỪ LANGCHAIN
-    const langchainStream = await chatModel.stream(formattedMessages, { signal });
+    // Kích hoạt luồng stream từ langchains, signal để hủy nếu client ngắt kết nối
+    const langchainStream = await chatModel.stream(formattedMessages, {
+      signal,
+    });
 
-    // 6. ĐÃ SỬA: Biến đổi thành chuỗi văn bản SSE (String) thay vì để nguyên Object
+    // Biến đổi thành chuỗi văn bản SSE (String) thay vì để nguyên Object
     async function* transformLangChainStream() {
       for await (const chunk of langchainStream) {
         // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
@@ -121,7 +131,6 @@ class AiService {
           content: chunk.content || "",
         };
         // BKAV HaiHS : Điều chỉnh đầu ra theo chuẩn LangChain { content } - end
-        // 🌟 BÍ KÍP: Bắn về dạng string "data: {...}\n\n" đúng gu của res.write()
         yield `data: ${JSON.stringify(payload)}\n\n`;
       }
       yield `data: [DONE]\n\n`; // Chuỗi báo hiệu kết thúc luồng chuẩn quốc tế
@@ -129,9 +138,9 @@ class AiService {
 
     return Readable.from(transformLangChainStream());
   }
-  // BKAV HaiHS : Lay luong stream tu LangChain va truyen tin hieu dung - end
+  // BKAV HaiHS : lấy luồng steam từ langchain - end
 
-  // BKAV HaiHS : Lay luong stream tu Flowise va truyen tin hieu dung - start
+  // BKAV HaiHS : lấy luồng stream từ Flowise - start
   async getFlowiseStream(prompt, historyMessages, signal) {
     const response = await axios.post(
       process.env.FLOWISE_API_URL,
@@ -151,7 +160,7 @@ class AiService {
       },
     );
 
-    // ĐÃ SỬA: Biến đổi thành chuỗi văn bản SSE (String) cho Flowise
+    // Biến đổi thành chuỗi văn bản SSE (String) cho Flowise
     async function* transformFlowiseStream() {
       let buffer = "";
 
@@ -172,15 +181,14 @@ class AiService {
           try {
             const parsed = JSON.parse(jsonStr);
 
-             if (parsed.event === "token") {
-               // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - start
-               const payload = {
-                 content: parsed.data || "",
-               };
-               // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - end
-               // 🌟 BÍ KÍP: Đồng bộ hóa Flowise về chung 1 định dạng chuỗi giống hệt Groq/LangChain
-               yield `data: ${JSON.stringify(payload)}\n\n`;
-             }
+            if (parsed.event === "token") {
+              // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - start
+              const payload = {
+                content: parsed.data || "",
+              };
+              // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - end
+              yield `data: ${JSON.stringify(payload)}\n\n`;
+            }
           } catch (e) {
             // Bỏ qua lỗi cú pháp dòng dở dang
           }
@@ -191,7 +199,7 @@ class AiService {
 
     return Readable.from(transformFlowiseStream());
   }
-  // BKAV HaiHS : Lay luong stream tu Flowise va truyen tin hieu dung - end
+  // BKAV HaiHS : lấy luồng stream từ Flowise - end
 }
 
 module.exports = new AiService();
