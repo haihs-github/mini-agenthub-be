@@ -28,10 +28,21 @@ class AuthController {
       // gửi email & password xuống hàm login của authService
       const result = await authService.login(email, password);
 
-      // Trả Response cho người dùng
+      // Luu Refresh Token vao HttpOnly Cookie bao mat
+      res.cookie("refreshToken", result.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+      });
+
+      // Trả Response cho người dùng (chỉ trả token và thông tin user)
       res.status(200).json({
         message: "Đăng nhập thành công!",
-        data: result,
+        data: {
+          token: result.accessToken,
+          user: result.user,
+        },
       });
     } catch (error) {
       // chuyển lỗi đó đến Middleware Error Handler
@@ -39,6 +50,41 @@ class AuthController {
     }
   }
   //  BKAV HaiHS : xử lý đăng nhập - end
+
+  // BKAV HaiHS : xử lý làm mới token (Refresh Token) - start
+  async refresh(req, res, next) {
+    try {
+      const refreshToken = req.cookies.refreshToken;
+      const result = await authService.refresh(refreshToken);
+
+      res.status(200).json({
+        message: "Gia hạn phiên đăng nhập thành công!",
+        data: {
+          token: result.accessToken,
+          user: result.user,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : xử lý làm mới token (Refresh Token) - end
+
+  // BKAV HaiHS : xử lý đăng xuất giải phóng token - start
+  async logout(req, res, next) {
+    try {
+      const refreshToken = req.cookies.refreshToken;
+      await authService.logout(refreshToken);
+
+      res.clearCookie("refreshToken");
+      res.status(200).json({
+        message: "Đăng xuất tài khoản thành công!",
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : xử lý đăng xuất giải phóng token - end
 
   // BKAV HaiHS : xử lý đổi mật khẩu - start
   async changePassword(req, res, next) {

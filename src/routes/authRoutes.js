@@ -6,6 +6,12 @@ const authController = require("../controllers/authController");
 // API đăng nhập
 router.post("/login", authController.login);
 
+// API làm mới Access Token (Gia hạn phiên)
+router.post("/refresh", authController.refresh);
+
+// API đăng xuất (Xóa phiên ở DB và cookie)
+router.post("/logout", authController.logout);
+
 // API đổi mật khẩu
 router.put("/change-password", authMiddleware, authController.changePassword);
 

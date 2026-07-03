@@ -18,6 +18,7 @@ model User {
   permissions   String[]       @default(["CHAT", "CONV_C", "CONV_R", "CONV_U", "CONV_D"]) 
   conversations Conversation[]
   groups        Group[]        @relation("UserGroups") // 1 người thuộc nhiều nhóm 
+  refreshTokens RefreshToken[] // BKAV HaiHS : Danh sach token gia han phien - start / end
 }
 
 // Bảng 2: Nhóm
@@ -58,5 +59,15 @@ model Attachment {
   fileType  String   // Định dạng file (ví dụ: image/jpeg, image/png)
   messageId Int
   message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// Bảng 6: Token làm mới dùng để gia hạn đăng nhập bảo mật
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
   createdAt DateTime @default(now())
 }

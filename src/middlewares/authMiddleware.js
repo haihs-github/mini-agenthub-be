@@ -15,7 +15,7 @@ const authMiddleware = (req, res, next) => {
 
   try {
     // Giải mã token xem có hợp lệ không
-    const SECRET_KEY = process.env.JWT_SECRET || "Sieu_Mat_Ma_Cua_Toi_123";
+    const SECRET_KEY = process.env.JWT_ACCESS_SECRET;
     const decoded = jwt.verify(token, SECRET_KEY);
 
     // Đính kèm ID người dùng vào req để các tầng sau (Controller/Service) biết ai đang gọi
