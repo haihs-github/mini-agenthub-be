@@ -55,9 +55,7 @@ class UserService {
     // Không trả về password trong kết quả phản hồi Client
     delete newUser.password;
 
-    // BKAV HaiHS : Xóa cache phân trang khi có user mới - start
     await redisStreamService.cacheDelPattern("users:page:*");
-    // BKAV HaiHS : Xóa cache phân trang khi có user mới - end
 
     return newUser;
   }

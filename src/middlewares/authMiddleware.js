@@ -25,7 +25,7 @@ const authMiddleware = (req, res, next) => {
     next(); // Cho phép đi tiếp vào Controller
   } catch (error) {
     return res
-      .status(403)
+      .status(401)
       .json({ message: "Thẻ bài (Token) đã hết hạn hoặc không hợp lệ!" });
   }
 };

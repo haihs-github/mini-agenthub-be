@@ -26,9 +26,8 @@ class GroupService {
     }
 
     const group = await groupRepository.create(groupData);
-    // BKAV HaiHS : Xóa cache danh sách nhóm - start
+    //  Xóa cache danh sách nhóm
     await redisStreamService.cacheDelPattern("groups:page:*");
-    // BKAV HaiHS : Xóa cache danh sách nhóm - end
     return group;
   }
   // BKAV HaiHS : xử lý tạo nhóm mới - end
