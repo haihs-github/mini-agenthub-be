@@ -9,6 +9,7 @@ class RedisStreamService {
     this.memoryStreams = new Map(); // map lưu các chunk chữ của phòng chat trong RAM khi redis sập
     this.memoryActiveFlags = new Set(); // Lưu các stream trong ram khi redis sập
     this.memorySubscribers = new Map(); // Fallback cho Pub/Sub subscribers
+    this.memoryCache = new Map(); // BKAV HaiHS : Fallback luu tru cap key-value da nang - start / end
     this.localSeqCounters = new Map(); // streamId -> so nguyen tang dan
 
     // BKAV HaiHS : Khởi tạo 2 kết nối đến redis - start
@@ -281,6 +282,79 @@ class RedisStreamService {
     this.memoryActiveFlags.delete(streamId);
   }
   // BKAV HaiHS : Xóa hoàn toàn stream sau khi chat xong - end
+
+  // BKAV HaiHS : Hệ thống lưu trữ Cache-Aside hỗ trợ cả Redis và RAM cục bộ - start
+  // lấy cache
+  async cacheGet(key) {
+    if (this.isRedisConnected) {
+      try {
+        return await this.ioredisClient.get(key);
+      } catch (e) {
+        // Bỏ qua lỗi quay sang đọc bộ đệm RAM
+      }
+    }
+    const item = this.memoryCache.get(key);
+    if (item) {
+      // Kiểm tra xem RAM cache đã hết hạn chưa
+      if (item.expiresAt && item.expiresAt < Date.now()) {
+        this.memoryCache.delete(key);
+        return null;
+      }
+      return item.value;
+    }
+    return null;
+  }
+
+  // ghi cache
+  async cacheSet(key, value, ttlSeconds) {
+    if (this.isRedisConnected) {
+      try {
+        await this.ioredisClient.set(key, value, "EX", ttlSeconds);
+        return;
+      } catch (e) {
+        // Bỏ qua lỗi quay sang lưu vào bộ đệm RAM
+      }
+    }
+    const expiresAt = ttlSeconds ? Date.now() + ttlSeconds * 1000 : null;
+    this.memoryCache.set(key, { value, expiresAt });
+  }
+
+  // xóa cache
+  async cacheDel(key) {
+    if (this.isRedisConnected) {
+      try {
+        await this.ioredisClient.del(key);
+        return;
+      } catch (e) {
+        // Bỏ qua lỗi
+      }
+    }
+    this.memoryCache.delete(key);
+  }
+
+  // xóa hàng loạt
+  async cacheDelPattern(pattern) {
+    if (this.isRedisConnected) {
+      try {
+        // Quét tìm các key khớp với pattern
+        const keys = await this.ioredisClient.keys(pattern);
+        if (keys.length > 0) {
+          await this.ioredisClient.del(...keys);
+        }
+        return;
+      } catch (e) {
+        // Bỏ qua lỗi
+      }
+    }
+    // Xóa trong bộ nhớ RAM
+    const regex = new RegExp("^" + pattern.replace("*", ".*") + "$");
+    for (const key of this.memoryCache.keys()) {
+      if (regex.test(key)) {
+        this.memoryCache.delete(key);
+      }
+    }
+  }
+  // BKAV HaiHS : Hệ thống lưu trữ Cache-Aside hỗ trợ cả Redis và RAM cục bộ - end
 }
 
 module.exports = new RedisStreamService();

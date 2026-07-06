@@ -3,9 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const AppError = require("../utils/appError");
 const ERROR = require("../constants/errorCodes");
-// BKAV HaiHS : Import prisma client de tuong tac voi bang RefreshToken - start
 const prisma = require("../models/prismaClient");
-// BKAV HaiHS : Import prisma client de tuong tac voi bang RefreshToken - end
 
 class AuthService {
   // BKAV HaiHS : xử lý đăng nhập bằng 2 Token (Access + Refresh) - start

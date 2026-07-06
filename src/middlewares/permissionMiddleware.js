@@ -1,6 +1,7 @@
 // middleware kiểm tra quyền
-
 const userRepository = require("../repositories/userRepository");
+//redisStreamService de dung Cache-Aside
+const redisStreamService = require("../services/redisStreamService");
 
 // BKAV HaiHS : Middleware kiểm tra quyền - start
 const permissionMiddleware = (requiredPermission) => {
@@ -16,24 +17,41 @@ const permissionMiddleware = (requiredPermission) => {
         });
       }
 
-      // lấy quyền từ db
-      const user = await userRepository.findByIdWithGroups(userId);
+      // BKAV HaiHS : Áp dụng Cache-Aside đọc quyền hạn từ Cache trước - start
+      const cacheKey = `user:${userId}:permissions`;
+      let effectivePermissions;
+      const cachedPermissions = await redisStreamService.cacheGet(cacheKey);
 
-      // Kiểm tra xem user có tồn tại không
-      if (!user) {
-        return res.status(404).json({
-          message: "Tài khoản của bạn không còn tồn tại trên hệ thống!",
-        });
+      if (cachedPermissions) {
+        effectivePermissions = JSON.parse(cachedPermissions);
+      } else {
+        // [CACHE MISS] - Đọc từ database và gộp quyền
+        const user = await userRepository.findByIdWithGroups(userId);
+
+        // Kiểm tra xem user có tồn tại không
+        if (!user) {
+          return res.status(404).json({
+            message: "Tài khoản của bạn không còn tồn tại trên hệ thống!",
+          });
+        }
+
+        // hợp nhất quyền hạn của user và group của user
+        const userPerms = user.permissions || [];
+        const groupPerms = user.groups
+          ? user.groups.flatMap((g) => g.permissions)
+          : [];
+
+        // Gộp 2 mảng lại và loại bỏ các phần tử trùng lặp bằng Set
+        effectivePermissions = [...new Set([...userPerms, ...groupPerms])];
+
+        // Ghi ngược lại vào Cache Redis với TTL là 1 tiếng (3600 giây)
+        await redisStreamService.cacheSet(
+          cacheKey,
+          JSON.stringify(effectivePermissions),
+          3600,
+        );
       }
-
-      // hợp nhất quyền hạn của user và group của user
-      const userPerms = user.permissions || [];
-      const groupPerms = user.groups
-        ? user.groups.flatMap((g) => g.permissions)
-        : [];
-
-      // Gộp 2 mảng lại và loại bỏ các phần tử trùng lặp bằng Set
-      const effectivePermissions = [...new Set([...userPerms, ...groupPerms])];
+      // BKAV HaiHS : Áp dụng Cache-Aside đọc quyền hạn từ Cache trước - end
 
       // kiểm tra xem có quyền cần thiết ko?
       if (!effectivePermissions.includes(requiredPermission)) {

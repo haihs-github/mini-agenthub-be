@@ -5,6 +5,8 @@ const crypto = require("crypto");
 const AppError = require("../utils/appError");
 const ERROR = require("../constants/errorCodes");
 const jwt = require("jsonwebtoken");
+const redisStreamService = require("./redisStreamService");
+
 class UserService {
   // BKAV HaiHS : tạo người dùng mới - start
   async createUserByAdmin(email, fullname, groupIds) {
@@ -52,19 +54,30 @@ class UserService {
 
     // Không trả về password trong kết quả phản hồi Client
     delete newUser.password;
+
+    // BKAV HaiHS : Xóa cache phân trang khi có user mới - start
+    await redisStreamService.cacheDelPattern("users:page:*");
+    // BKAV HaiHS : Xóa cache phân trang khi có user mới - end
+
     return newUser;
   }
   // BKAV HaiHS : tạo người dùng mới - end
 
   // BKAV HaiHS : logic nghiệp vụ lấy danh sách phân trang - start
   async getAllUsers(page, limit) {
+    const cacheKey = `users:page:${page}:limit:${limit}:search:none`;
+    const cached = await redisStreamService.cacheGet(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     const skip = (page - 1) * limit;
     const take = limit;
 
     const { users, total } = await userRepository.findAndCountAll(skip, take);
     const totalPages = Math.ceil(total / limit);
 
-    return {
+    const result = {
       users,
       pagination: {
         totalItems: total,
@@ -73,15 +86,28 @@ class UserService {
         limit,
       },
     };
+
+    // Cache kết quả phân trang trong 5 phút (300 giây)
+    await redisStreamService.cacheSet(cacheKey, JSON.stringify(result), 300);
+    return result;
   }
   // BKAV HaiHS : logic nghiệp vụ lấy danh sách phân trang - end
 
   // BKAV HaiHS : lấy chi tiết người dùng - start
   async getUserDetail(userId) {
+    const cacheKey = `user:${userId}:profile`;
+    const cached = await redisStreamService.cacheGet(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     const user = await userRepository.findByIdDetailed(userId);
     if (!user) {
       throw new AppError(ERROR.USER.NOT_FOUND);
     }
+
+    // Cache thông tin chi tiết người dùng và nhóm của họ trong 24 giờ (86400 giây)
+    await redisStreamService.cacheSet(cacheKey, JSON.stringify(user), 86400);
     return user;
   }
   // BKAV HaiHS : lấy chi tiết người dùng - end
@@ -115,7 +141,13 @@ class UserService {
       };
     }
 
-    return await userRepository.update(userId, updateData);
+    const result = await userRepository.update(userId, updateData);
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - start
+    await redisStreamService.cacheDel(`user:${userId}:profile`);
+    await redisStreamService.cacheDel(`user:${userId}:permissions`);
+    await redisStreamService.cacheDelPattern("users:page:*");
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - end
+    return result;
   }
   // BKAV HaiHS : cập nhật người dùng - end
 
@@ -126,15 +158,27 @@ class UserService {
       throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
-    return await userRepository.delete(userId);
+    const result = await userRepository.delete(userId);
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - start
+    await redisStreamService.cacheDel(`user:${userId}:profile`);
+    await redisStreamService.cacheDel(`user:${userId}:permissions`);
+    await redisStreamService.cacheDelPattern("users:page:*");
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - end
+    return result;
   }
   // BKAV HaiHS : xóa người dùng - end
 
   // BKAV HaiHS : tìm người dùng - start
   async searchUsers(keyword, page, limit) {
+    const cleanKeyword = keyword ? keyword.trim() : "";
+    const cacheKey = `users:page:${page}:limit:${limit}:search:${encodeURIComponent(cleanKeyword)}`;
+    const cached = await redisStreamService.cacheGet(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     const skip = (page - 1) * limit;
     const take = limit;
-    const cleanKeyword = keyword ? keyword.trim() : "";
 
     const { users, total } = await userRepository.searchAndCount({
       keyword: cleanKeyword,
@@ -144,7 +188,7 @@ class UserService {
 
     const totalPages = Math.ceil(total / limit);
 
-    return {
+    const result = {
       users,
       pagination: {
         totalItems: total,
@@ -153,6 +197,10 @@ class UserService {
         limit,
       },
     };
+
+    // Cache kết quả tìm kiếm phân trang trong 5 phút (300 giây)
+    await redisStreamService.cacheSet(cacheKey, JSON.stringify(result), 300);
+    return result;
   }
   // BKAV HaiHS : tìm người dùng - end
 
@@ -193,6 +241,12 @@ class UserService {
       { expiresIn: "24h" },
     );
 
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - start
+    await redisStreamService.cacheDel(`user:${userId}:profile`);
+    await redisStreamService.cacheDel(`user:${userId}:permissions`);
+    await redisStreamService.cacheDelPattern("users:page:*");
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - end
+
     return {
       token: newToken,
       user: {
@@ -215,7 +269,13 @@ class UserService {
 
     // 2. Ra lệnh cho Repository thực thi xóa bản ghi
     // Cơ chế Cascade ngầm của PostgreSQL/Prisma sẽ tự quét sạch các bảng con phụ thuộc
-    return await userRepository.delete(userId);
+    const result = await userRepository.delete(userId);
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - start
+    await redisStreamService.cacheDel(`user:${userId}:profile`);
+    await redisStreamService.cacheDel(`user:${userId}:permissions`);
+    await redisStreamService.cacheDelPattern("users:page:*");
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - end
+    return result;
   }
   // BKAV HaiHS : Logic tự xóa tài khoản - end
 }
