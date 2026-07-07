@@ -10,15 +10,20 @@ const groupRoutes = require("./routes/groupRoutes");
 const conversationRoutes = require("./routes/conversationRoutes");
 const errorHandler = require("./middlewares/errorHandler");
 const path = require("path");
+// BKAV HaiHS : Import global rate limiter - start
+const { generalLimiter } = require("./middlewares/rateLimitMiddleware");
+// BKAV HaiHS : Import global rate limiter - end
 
 const app = express();
 
 // Middleware cấu hình chung
 // BKAV HaiHS : Cap nhat CORS de cho phep gui kem cookie - start
-app.use(cors({
-  origin: (origin, callback) => callback(null, true),
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => callback(null, true),
+    credentials: true,
+  }),
+);
 // BKAV HaiHS : Cap nhat CORS de cho phep gui kem cookie - end
 
 // BKAV HaiHS : Su dung cookie-parser - start
@@ -27,6 +32,10 @@ app.use(cookieParser());
 
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
+
+// BKAV HaiHS : Ap dung rate limit chung cho tat ca cac api - start
+app.use("/api", generalLimiter);
+// BKAV HaiHS : Ap dung rate limit chung cho tat ca cac api - end
 
 // Gắn các Routes
 app.use("/api/auth", authRoutes);

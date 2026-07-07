@@ -4,12 +4,18 @@ const conversationController = require("../controllers/conversationController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const permissionMiddleware = require("../middlewares/permissionMiddleware");
 const upload = require("../middlewares/uploadMiddleware");
+const {
+  chatLimiter,
+  heavyQueryLimiter,
+  writeDbLimiter,
+} = require("../middlewares/rateLimitMiddleware");
 
 // BKAV HaiHS : API Tạo phòng chat mới (CONV_C) - start
 router.post(
   "/",
   authMiddleware,
   permissionMiddleware("CONV_C"),
+  writeDbLimiter,
   conversationController.createConversation,
 );
 // BKAV HaiHS : API Tạo phòng chat mới (CONV_C) - end
@@ -19,6 +25,7 @@ router.get(
   "/",
   authMiddleware,
   permissionMiddleware("CONV_R"),
+  heavyQueryLimiter,
   conversationController.getMyConversations,
 );
 // BKAV HaiHS : API Lấy toàn bộ danh sách phòng chat của chính mình (CONV_R) - end
@@ -37,6 +44,7 @@ router.put(
   "/:id",
   authMiddleware,
   permissionMiddleware("CONV_U"),
+  writeDbLimiter,
   conversationController.updateTitle,
 );
 // BKAV HaiHS : API Cập nhật tiêu đề phòng chat của chính mình (CONV_U) - end
@@ -46,6 +54,7 @@ router.delete(
   "/",
   authMiddleware,
   permissionMiddleware("CONV_D"),
+  writeDbLimiter,
   conversationController.clearAllConversations,
 );
 // BKAV HaiHS : Xóa toàn bộ lịch sử chat - end
@@ -55,6 +64,7 @@ router.delete(
   "/:id",
   authMiddleware,
   permissionMiddleware("CONV_D"),
+  writeDbLimiter,
   conversationController.deleteConversation,
 );
 // BKAV HaiHS : API Xóa phòng chat của chính mình (CONV_D) - end
@@ -64,6 +74,7 @@ router.post(
   "/:id/chat",
   authMiddleware,
   permissionMiddleware("CHAT"),
+  chatLimiter,
   upload.array("images", 5),
   conversationController.handleChat,
 );
@@ -72,6 +83,7 @@ router.get(
   "/:id/chat",
   authMiddleware,
   permissionMiddleware("CHAT"),
+  chatLimiter,
   conversationController.handleStreamReconnect,
 );
 

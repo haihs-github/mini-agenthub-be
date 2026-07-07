@@ -3,12 +3,17 @@ const router = express.Router();
 const groupController = require("../controllers/groupController");
 const authMiddleware = require("../middlewares/authMiddleware");
 const permissionMiddleware = require("../middlewares/permissionMiddleware");
+const {
+  heavyQueryLimiter,
+  writeDbLimiter,
+} = require("../middlewares/rateLimitMiddleware");
 
 // BKAV HaiHS : API Lấy danh sách nhóm - Phải Đăng nhập + Có quyền GROUP_R - start
 router.get(
   "/",
   authMiddleware,
   permissionMiddleware("GROUP_R"),
+  heavyQueryLimiter,
   groupController.getAllGroups,
 );
 // BKAV HaiHS : API Lấy danh sách nhóm - Phải Đăng nhập + Có quyền GROUP_R - end
@@ -27,6 +32,7 @@ router.post(
   "/create",
   authMiddleware,
   permissionMiddleware("GROUP_C"),
+  writeDbLimiter,
   groupController.createGroup,
 );
 // BKAV HaiHS : API Tạo nhóm: Phải Đăng nhập + Có quyền GROUP_C - end
@@ -36,6 +42,7 @@ router.put(
   "/:id",
   authMiddleware,
   permissionMiddleware("GROUP_U"),
+  writeDbLimiter,
   groupController.updateGroup,
 );
 // BKAV HaiHS : API Sửa quyền của nhóm (GROUP_U) - end
@@ -45,6 +52,7 @@ router.post(
   "/:id/users",
   authMiddleware,
   permissionMiddleware("GROUP_ADD_USER"),
+  writeDbLimiter,
   groupController.addUsers,
 );
 // BKAV HaiHS :API Thêm nhiều thành viên vào nhóm (GROUP_ADD_USER) - end
@@ -54,6 +62,7 @@ router.delete(
   "/:id",
   authMiddleware,
   permissionMiddleware("GROUP_D"),
+  writeDbLimiter,
   groupController.deleteGroup,
 );
 // BKAV HaiHS : API Xóa nhóm (GROUP_D) - end
@@ -63,6 +72,7 @@ router.delete(
   "/:id/users",
   authMiddleware,
   permissionMiddleware("GROUP_DELETE_USER"),
+  writeDbLimiter,
   groupController.removeUsers,
 );
 // BKAV HaiHS : API Xóa thành viên khỏi nhóm (GROUP_DELETE_USER) - end
