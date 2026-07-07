@@ -18,6 +18,16 @@ router.get(
 );
 // BKAV HaiHS : API Lấy danh sách nhóm - Phải Đăng nhập + Có quyền GROUP_R - end
 
+// BKAV HaiHS : API Tìm kiếm nhóm - Phải Đăng nhập + Có quyền GROUP_R - start
+router.get(
+  "/search",
+  authMiddleware,
+  permissionMiddleware("GROUP_R"),
+  heavyQueryLimiter,
+  groupController.searchGroups,
+);
+// BKAV HaiHS : API Tìm kiếm nhóm - Phải Đăng nhập + Có quyền GROUP_R - end
+
 // BKAV HaiHS : API Lấy chi tiết nhóm theo ID - Phải Đăng nhập + Có quyền GROUP_R - start
 router.get(
   "/:id",

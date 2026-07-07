@@ -223,6 +223,28 @@ class GroupController {
     }
   }
   // BKAV HaiHS : xử lý lấy chi tiết thông tin nhóm - end
+
+  // BKAV HaiHS : xử lý tìm kiếm nhóm - start
+  async searchGroups(req, res, next) {
+    try {
+      const keyword = req.query.keyword?.trim() || "";
+      let { page, limit } = req.query;
+
+      page = parseInt(page) || 1;
+      limit = parseInt(limit) || 10;
+
+      const result = await groupService.searchGroups(keyword, page, limit);
+
+      res.status(200).json({
+        message: "Tìm kiếm danh sách nhóm thành công!",
+        data: result.groups,
+        pagination: result.pagination,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+  // BKAV HaiHS : xử lý tìm kiếm nhóm - end
 }
 
 module.exports = new GroupController();

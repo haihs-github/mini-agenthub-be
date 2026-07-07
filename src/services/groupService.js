@@ -177,6 +177,46 @@ class GroupService {
     return group;
   }
   // BKAV HaiHS : xử lý lấy chi tiết nhóm (kèm danh sách thành viên) - end
+
+  // BKAV HaiHS : xử lý tìm kiếm nhóm có phân trang và caching - start
+  async searchGroups(keyword, page, limit) {
+    const cleanKeyword = keyword ? keyword.trim() : "";
+    const cacheKey = `groups:page:${page}:limit:${limit}:search:${encodeURIComponent(cleanKeyword)}`;
+    const cached = await redisStreamService.cacheGet(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    const { groups, total } = await groupRepository.searchAndCount({
+      keyword: cleanKeyword,
+      skip,
+      take,
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    const result = {
+      groups: groups.map((g) => ({
+        id: g.id,
+        name: g.name,
+        permissions: g.permissions,
+        memberCount: g._count.users,
+      })),
+      pagination: {
+        totalItems: total,
+        totalPages,
+        currentPage: page,
+        limit,
+      },
+    };
+
+    await redisStreamService.cacheSet(cacheKey, JSON.stringify(result), 300); // 5 phút
+    return result;
+  }
+  // BKAV HaiHS : xử lý tìm kiếm nhóm có phân trang và caching - end
 }
 
 module.exports = new GroupService();

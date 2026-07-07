@@ -130,6 +130,36 @@ class GroupRepository {
     });
   }
   // BKAV HaiHS : Lấy thông tin chi tiết nhóm kèm danh sách thành viên - end
+
+  // BKAV HaiHS : Tìm kiếm nhóm và đếm tổng số bản ghi - start
+  async searchAndCount({ keyword, skip, take }) {
+    const where = keyword
+      ? {
+          name: {
+            contains: keyword,
+            mode: "insensitive",
+          },
+        }
+      : {};
+
+    const [groups, total] = await Promise.all([
+      prisma.group.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { id: "asc" },
+        include: {
+          _count: {
+            select: { users: true },
+          },
+        },
+      }),
+      prisma.group.count({ where }),
+    ]);
+
+    return { groups, total };
+  }
+  // BKAV HaiHS : Tìm kiếm nhóm và đếm tổng số bản ghi - end
 }
 
 module.exports = new GroupRepository();
