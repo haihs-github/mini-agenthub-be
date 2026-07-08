@@ -79,7 +79,7 @@ class AuthService {
   }
   // BKAV HaiHS : xử lý đăng nhập bằng 2 Token (Access + Refresh) - end
 
-  // BKAV HaiHS : Làm mới Access Token từ Refresh Token - start
+  // BKAV HaiHS : Làm mới Access Token từ Refresh Token (Cơ chế Rolling Session / Rotation) - start
   async refresh(refreshToken) {
     if (!refreshToken) {
       throw new AppError({
@@ -96,6 +96,11 @@ class AuthService {
     try {
       decoded = jwt.verify(refreshToken, REFRESH_SECRET);
     } catch (e) {
+      // Nếu hết hạn hoặc sai chữ ký, dọn dẹp DB luôn để dọn rác
+      await prisma.refreshToken
+        .delete({ where: { token: refreshToken } })
+        .catch(() => {});
+
       throw new AppError({
         statusCode: 401,
         code: "AUTH_REFRESH_TOKEN_INVALID",
@@ -129,6 +134,11 @@ class AuthService {
       : [];
     const allPermissions = [...new Set([...user.permissions, ...groupPerms])];
 
+    // Xóa Refresh Token cũ để bảo mật (Refresh Token Rotation)
+    await prisma.refreshToken
+      .delete({ where: { token: refreshToken } })
+      .catch(() => {});
+
     // Tạo Access Token mới (15 phút)
     const accessToken = jwt.sign(
       {
@@ -143,8 +153,27 @@ class AuthService {
       { expiresIn: "15m" },
     );
 
+    // Cấp mới Refresh Token mới tinh (7 ngày) - Rolling Session
+    const newRefreshToken = jwt.sign(
+      {
+        id: user.id,
+      },
+      REFRESH_SECRET,
+      { expiresIn: "7d" },
+    );
+
+    // Lưu Refresh Token mới này vào Database
+    await prisma.refreshToken.create({
+      data: {
+        token: newRefreshToken,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Kéo dài thêm 7 ngày
+      },
+    });
+
     return {
       accessToken,
+      refreshToken: newRefreshToken, // Trả về Refresh Token mới để Controller ghi đè Cookie
       user: {
         email: user.email,
         fullname: user.fullname,
@@ -154,6 +183,7 @@ class AuthService {
       },
     };
   }
+  // BKAV HaiHS : Làm mới Access Token từ Refresh Token (Cơ chế Rolling Session / Rotation) - end
 
   async logout(refreshToken) {
     if (refreshToken) {

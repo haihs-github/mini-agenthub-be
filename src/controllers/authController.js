@@ -57,6 +57,14 @@ class AuthController {
       const refreshToken = req.cookies.refreshToken;
       const result = await authService.refresh(refreshToken);
 
+      // Cập nhật Refresh Token mới vào Cookie HttpOnly để thực hiện Rolling Session
+      res.cookie("refreshToken", result.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // Gia hạn thêm 7 ngày từ thời điểm hiện tại
+      });
+
       res.status(200).json({
         message: "Gia hạn phiên đăng nhập thành công!",
         data: {
