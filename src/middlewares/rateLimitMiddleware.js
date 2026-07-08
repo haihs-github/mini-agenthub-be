@@ -118,6 +118,8 @@ const generalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 60,
   message: {
+    status: "fail",
+    code: "RATE_LIMIT_GENERAL",
     message: "Bạn đang thao tác quá nhanh. Vui lòng thử lại sau 1 phút!",
   },
   standardHeaders: true,
@@ -131,6 +133,8 @@ const authLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 5,
   message: {
+    status: "fail",
+    code: "RATE_LIMIT_AUTH",
     message: "Quá nhiều yêu cầu xác thực. Vui lòng thử lại sau 1 phút!",
   },
   standardHeaders: true,
@@ -144,6 +148,8 @@ const refreshLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 20,
   message: {
+    status: "fail",
+    code: "RATE_LIMIT_REFRESH",
     message: "Yêu cầu gia hạn quá nhanh. Vui lòng thử lại sau!",
   },
   standardHeaders: true,
@@ -157,6 +163,8 @@ const chatLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 10,
   message: {
+    status: "fail",
+    code: "RATE_LIMIT_CHAT",
     message: "Bạn đã vượt giới hạn chat 10 tin nhắn/phút. Vui lòng đợi và thử lại!",
   },
   standardHeaders: true,
@@ -171,6 +179,8 @@ const heavyQueryLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 30,
   message: {
+    status: "fail",
+    code: "RATE_LIMIT_HEAVY",
     message: "Hệ thống đang bận xử lý truy vấn của bạn. Vui lòng thử lại sau!",
   },
   standardHeaders: true,
@@ -185,6 +195,8 @@ const writeDbLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 20,
   message: {
+    status: "fail",
+    code: "RATE_LIMIT_WRITE",
     message: "Bạn đang thực hiện quá nhiều thao tác thay đổi dữ liệu. Vui lòng đợi!",
   },
   standardHeaders: true,
