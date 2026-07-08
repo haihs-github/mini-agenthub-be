@@ -63,7 +63,10 @@ class UserRepository {
       prisma.user.findMany({
         skip: skip,
         take: take,
-        orderBy: { id: "asc" }, // Sắp xếp ID tăng dần
+        orderBy: [
+          { fullname: "asc" },
+          { id: "asc" },
+        ], // Sắp xếp theo bảng chữ cái fullname, id tăng dần
         select: {
           id: true,
           email: true,
@@ -160,7 +163,10 @@ class UserRepository {
         where: whereClause,
         skip: skip,
         take: take,
-        orderBy: { id: "asc" },
+        orderBy: [
+          { fullname: "asc" },
+          { id: "asc" },
+        ],
         select: {
           id: true,
           email: true,
