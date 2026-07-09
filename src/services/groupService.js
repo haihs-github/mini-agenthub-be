@@ -26,8 +26,11 @@ class GroupService {
     }
 
     const group = await groupRepository.create(groupData);
-    //  Xóa cache danh sách nhóm
+    //  Xóa cache danh sách nhóm và danh sách phân trang người dùng nếu có gán user
     await redisStreamService.cacheDelPattern("groups:page:*");
+    if (userIds.length > 0) {
+      await redisStreamService.cacheDelPattern("users:page:*");
+    }
     return group;
   }
   // BKAV HaiHS : xử lý tạo nhóm mới - end
@@ -62,6 +65,7 @@ class GroupService {
     await redisStreamService.cacheDelPattern("groups:page:*");
     await redisStreamService.cacheDelPattern("user:*:permissions");
     await redisStreamService.cacheDelPattern("user:*:profile");
+    await redisStreamService.cacheDelPattern("users:page:*");
     // BKAV HaiHS : Xóa cache nhóm và phân quyền của toàn bộ user liên quan - end
     return updated;
   }
@@ -79,6 +83,7 @@ class GroupService {
     // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang và phân quyền của các user liên quan - start
     await redisStreamService.cacheDel(`group:${groupId}:profile`);
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("users:page:*");
     for (const userId of userIds) {
       await redisStreamService.cacheDel(`user:${userId}:permissions`);
       await redisStreamService.cacheDel(`user:${userId}:profile`);
@@ -101,6 +106,7 @@ class GroupService {
     await redisStreamService.cacheDelPattern("groups:page:*");
     await redisStreamService.cacheDelPattern("user:*:permissions");
     await redisStreamService.cacheDelPattern("user:*:profile");
+    await redisStreamService.cacheDelPattern("users:page:*");
     // BKAV HaiHS : Xóa cache nhóm và phân quyền của toàn bộ user liên quan - end
     return result;
   }
@@ -117,6 +123,7 @@ class GroupService {
     // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang và phân quyền của các user liên quan - start
     await redisStreamService.cacheDel(`group:${groupId}:profile`);
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("users:page:*");
     for (const userId of userIds) {
       await redisStreamService.cacheDel(`user:${userId}:permissions`);
       await redisStreamService.cacheDel(`user:${userId}:profile`);
