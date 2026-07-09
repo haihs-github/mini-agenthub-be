@@ -13,6 +13,9 @@ class UserController {
       if (!email) {
         return res.status(400).json({ message: "Bắt buộc phải nhập Email!" });
       }
+      if (!fullname) {
+        return res.status(400).json({ message: "Bắt buộc phải nhập Họ và tên!" });
+      }
 
       // Kiểm tra định dạng cấu trúc Email
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -130,6 +133,13 @@ class UserController {
             .status(400)
             .json({ message: "Định dạng Email mới không hợp lệ!" });
         }
+      }
+
+      // Chặn cập nhật họ tên rỗng
+      if (fullname !== undefined && fullname === "") {
+        return res
+          .status(400)
+          .json({ message: "Họ và tên không được để trống!" });
       }
 
       // Kiểm tra và ép kiểu mảng groupIds đầu vào nếu có
