@@ -98,7 +98,10 @@ class GroupRepository {
       prisma.group.findMany({
         skip: skip,
         take: take,
-        orderBy: { id: "asc" }, // Sắp xếp theo ID tăng dần cho gọn gàng
+        orderBy: [
+          { name: "asc" },
+          { id: "asc" },
+        ], // Sắp xếp theo bảng chữ cái tên nhóm, sau đó theo ID tăng dần
         // Thêm phần này để đếm xem nhóm có bao nhiêu thành viên (rất hữu ích cho Frontend)
         include: {
           _count: {
@@ -147,7 +150,10 @@ class GroupRepository {
         where,
         skip,
         take,
-        orderBy: { id: "asc" },
+        orderBy: [
+          { name: "asc" },
+          { id: "asc" },
+        ],
         include: {
           _count: {
             select: { users: true },
