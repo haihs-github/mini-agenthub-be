@@ -57,11 +57,14 @@ class AIStreamManager {
       const state = streams.get(streamId);
       try {
         // BKAV HaiHS : Dang ky lang nghe tin hieu ABORT tu Redis Pub/Sub cheo may chu - start
-        unsubscribeControl = await redisStreamService.subscribeToChannel(streamId, (event) => {
-          if (event.type === "ABORT") {
-            abortController.abort();
-          }
-        });
+        unsubscribeControl = await redisStreamService.subscribeToChannel(
+          streamId,
+          (event) => {
+            if (event.type === "ABORT") {
+              abortController.abort();
+            }
+          },
+        );
         // BKAV HaiHS : Dang ky lang nghe tin hieu ABORT tu Redis Pub/Sub cheo may chu - end
 
         // Khởi tạo luồng AI từ model được cung cấp, truyền vào abortController.signal để có thể hủy bỏ khi cần
@@ -83,7 +86,22 @@ class AIStreamManager {
             const cleaned = line.trim();
             if (cleaned && cleaned.startsWith("data: ")) {
               const dataStr = cleaned.replace("data: ", "").trim();
-              if (dataStr !== "[DONE]") {
+              if (dataStr.startsWith("[DONE]")) {
+                try {
+                  const jsonStr = dataStr.replace("[DONE]", "").trim();
+                  if (jsonStr) {
+                    const parsedDone = JSON.parse(jsonStr);
+                    if (parsedDone.usage) {
+                      const currentState = streams.get(streamId);
+                      if (currentState) {
+                        currentState.usage = parsedDone.usage;
+                      }
+                    }
+                  }
+                } catch (e) {
+                  // Bỏ qua lỗi parse
+                }
+              } else {
                 try {
                   const parsed = JSON.parse(dataStr);
                   // lấy nội dung text từ các định dạng khác nhau của Flowise và LangChain
@@ -129,11 +147,15 @@ class AIStreamManager {
         }
 
         // phát tín hiệu done khi luồng kết thúc
-        const doneEvent = { type: "DONE" };
+        const currentStateDone = streams.get(streamId);
+        const doneEvent = {
+          type: "DONE",
+          ...(currentStateDone &&
+            currentStateDone.usage && { usage: currentStateDone.usage }),
+        };
         await redisStreamService.publishChunk(streamId, doneEvent);
 
         // gửi tín hiệu DONE đến client
-        const currentStateDone = streams.get(streamId);
         if (currentStateDone) {
           for (const handler of currentStateDone.clientHandlers) {
             try {
@@ -180,7 +202,20 @@ class AIStreamManager {
           }
           // Dong tat ca cac ket noi HTTP SSE cuc bo khi bi huy luong
           if (currentState) {
-            const doneEvent = { type: "DONE" };
+            if (!currentState.usage) {
+              const completionTokens = Math.round(
+                (currentState.fullText || "").length / 4,
+              );
+              currentState.usage = {
+                prompt_tokens: 0,
+                completion_tokens: completionTokens,
+                total_tokens: completionTokens,
+              };
+            }
+            const doneEvent = {
+              type: "DONE",
+              usage: currentState.usage,
+            };
             for (const handler of currentState.clientHandlers) {
               try {
                 handler(doneEvent);
@@ -249,7 +284,13 @@ class AIStreamManager {
       }
       // đóng kết nối nếu nhận được done
       else if (event.type === "DONE") {
-        res.write("data: [DONE]\n\n");
+        if (event.usage) {
+          res.write(
+            `data: [DONE] ${JSON.stringify({ usage: event.usage })}\n\n`,
+          );
+        } else {
+          res.write("data: [DONE]\n\n");
+        }
         res.end();
         connectionIsOpen = false;
         state.clientHandlers.delete(onEvent);
@@ -276,7 +317,11 @@ class AIStreamManager {
     // nếu stream đã xong thì ngắt kết nối
     if (state.isFinished) {
       state.clientHandlers.delete(onEvent);
-      res.write("data: [DONE]\n\n");
+      if (state.usage) {
+        res.write(`data: [DONE] ${JSON.stringify({ usage: state.usage })}\n\n`);
+      } else {
+        res.write("data: [DONE]\n\n");
+      }
       res.end();
     }
   }
@@ -301,7 +346,13 @@ class AIStreamManager {
         }
         // gửi xuống fe nếu đã lấy lịch sử xong
         if (event.type === "DONE" || event.type === "ABORT") {
-          res.write("data: [DONE]\n\n");
+          if (event.usage) {
+            res.write(
+              `data: [DONE] ${JSON.stringify({ usage: event.usage })}\n\n`,
+            );
+          } else {
+            res.write("data: [DONE]\n\n");
+          }
           res.end();
           connectionIsOpen = false;
           return;
@@ -358,10 +409,17 @@ class AIStreamManager {
     }
 
     // Nếu trong lịch sử có tín hiệu done -> đóng kết nối luôn
-    if (historyDone) {
+    const historyDoneEvent = historyEvents.find((e) => e.type === "DONE");
+    if (historyDoneEvent) {
       await unsubscribe();
       if (connectionIsOpen) {
-        res.write("data: [DONE]\n\n");
+        if (historyDoneEvent.usage) {
+          res.write(
+            `data: [DONE] ${JSON.stringify({ usage: historyDoneEvent.usage })}\n\n`,
+          );
+        } else {
+          res.write("data: [DONE]\n\n");
+        }
         res.end();
       }
       return;
@@ -375,7 +433,13 @@ class AIStreamManager {
       if (!connectionIsOpen) break;
       if (event.type === "DONE" || event.type === "ABORT") {
         await unsubscribe();
-        res.write("data: [DONE]\n\n");
+        if (event.usage) {
+          res.write(
+            `data: [DONE] ${JSON.stringify({ usage: event.usage })}\n\n`,
+          );
+        } else {
+          res.write("data: [DONE]\n\n");
+        }
         res.end();
         return;
       }
