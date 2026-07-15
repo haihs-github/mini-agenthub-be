@@ -46,6 +46,10 @@ model Message {
   role           String       // "user" hoặc "assistant"
   content        String       @db.Text
   modelName      String?
+  responseTime   String?
+  promptTokens   Int?
+  completionTokens Int?
+  totalTokens    Int?
   conversationId Int
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   attachments    Attachment[] // Một tin nhắn có thể kèm nhiều ảnh/file
