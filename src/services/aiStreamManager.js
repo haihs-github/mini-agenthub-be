@@ -185,6 +185,7 @@ class AIStreamManager {
         const doneEvent = {
           type: "DONE",
           ...(currentStateDone && {
+            isStopped: false,
             responseTime,
             ...(currentStateDone.usage && { usage: currentStateDone.usage })
           })
@@ -223,6 +224,7 @@ class AIStreamManager {
             completionTokens: usage.completion_tokens,
             totalTokens: usage.total_tokens,
             responseTime: finalResponseTime,
+            isStopped: false,
           });
         }
       } catch (err) {
@@ -264,6 +266,7 @@ class AIStreamManager {
               completionTokens: usage.completion_tokens,
               totalTokens: usage.total_tokens,
               responseTime: abortResponseTime,
+              isStopped: true,
             });
           }
           // Dong tat ca cac ket noi HTTP SSE cuc bo khi bi huy luong
@@ -282,6 +285,7 @@ class AIStreamManager {
 
             const doneEvent = {
               type: "DONE",
+              isStopped: true,
               responseTime: abortResponseTime,
               usage: currentState.usage,
             };
@@ -356,6 +360,7 @@ class AIStreamManager {
         const donePayload = {};
         if (event.usage) donePayload.usage = event.usage;
         if (event.responseTime) donePayload.responseTime = event.responseTime;
+        if (event.isStopped !== undefined) donePayload.isStopped = event.isStopped;
 
         if (Object.keys(donePayload).length > 0) {
           res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
@@ -391,6 +396,7 @@ class AIStreamManager {
       const donePayload = {};
       if (state.usage) donePayload.usage = state.usage;
       if (state.responseTime) donePayload.responseTime = state.responseTime;
+      if (state.isStopped !== undefined) donePayload.isStopped = state.isStopped;
 
       if (Object.keys(donePayload).length > 0) {
         res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
@@ -424,6 +430,7 @@ class AIStreamManager {
           const donePayload = {};
           if (event.usage) donePayload.usage = event.usage;
           if (event.responseTime) donePayload.responseTime = event.responseTime;
+          if (event.isStopped !== undefined) donePayload.isStopped = event.isStopped;
 
           if (Object.keys(donePayload).length > 0) {
             res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
@@ -493,6 +500,7 @@ class AIStreamManager {
         const donePayload = {};
         if (historyDoneEvent.usage) donePayload.usage = historyDoneEvent.usage;
         if (historyDoneEvent.responseTime) donePayload.responseTime = historyDoneEvent.responseTime;
+        if (historyDoneEvent.isStopped !== undefined) donePayload.isStopped = historyDoneEvent.isStopped;
 
         if (Object.keys(donePayload).length > 0) {
           res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
@@ -515,6 +523,7 @@ class AIStreamManager {
         const donePayload = {};
         if (event.usage) donePayload.usage = event.usage;
         if (event.responseTime) donePayload.responseTime = event.responseTime;
+        if (event.isStopped !== undefined) donePayload.isStopped = event.isStopped;
 
         if (Object.keys(donePayload).length > 0) {
           res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);

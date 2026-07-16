@@ -1,4 +1,3 @@
-// định nghĩa csdl PostgreSQL 
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,67 +6,66 @@ datasource db {
   provider = "postgresql"
 }
 
-// Bảng 1: Người dùng
 model User {
   id            Int            @id @default(autoincrement())
-  fullname      String         
-  phone         String?
-  address       String?
+  fullname      String
   email         String         @unique
   password      String
-  permissions   String[]       @default(["CHAT", "CONV_C", "CONV_R", "CONV_U", "CONV_D"]) 
+  permissions   String[]       @default(["CHAT", "CONV_C", "CONV_R", "CONV_U", "CONV_D"])
+  address       String?
+  phone         String?
   conversations Conversation[]
-  groups        Group[]        @relation("UserGroups") // 1 người thuộc nhiều nhóm 
-  refreshTokens RefreshToken[] // BKAV HaiHS : Danh sach token gia han phien - start / end
+  refreshTokens RefreshToken[]
+  groups        Group[]        @relation("UserGroups")
 }
 
-// Bảng 2: Nhóm
 model Group {
   id          Int      @id @default(autoincrement())
   name        String   @unique
   permissions String[] @default([])
-  users       User[]   @relation("UserGroups") // 1 nhóm có nhiều người 
+  users       User[]   @relation("UserGroups")
 }
 
-// Bảng 3: Hội thoại (Quản lý các phòng chat)
 model Conversation {
   id        Int       @id @default(autoincrement())
   title     String    @default("Cuộc hội thoại mới")
   userId    Int
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages  Message[] // Một cuộc hội thoại có nhiều tin nhắn
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
 }
 
-// Bảng 4: Tin nhắn (Lưu câu hỏi của User và phản hồi của AI)
 model Message {
-  id             Int          @id @default(autoincrement())
-  role           String       // "user" hoặc "assistant"
-  content        String       @db.Text
-  modelName      String?
-  conversationId Int
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  attachments    Attachment[] // Một tin nhắn có thể kèm nhiều ảnh/file
-  createdAt      DateTime     @default(now())
+  id               Int          @id @default(autoincrement())
+  role             String
+  content          String
+  modelName        String?
+  conversationId   Int
+  createdAt        DateTime     @default(now())
+  completionTokens Int?
+  promptTokens     Int?
+  totalTokens      Int?
+  responseTime     String?
+  isStopped        Boolean?     @default(false)
+  attachments      Attachment[]
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
 
-// Bảng 5: File phương tiện đính kèm theo từng tin nhắn (Multimodal)
 model Attachment {
   id        Int      @id @default(autoincrement())
-  filePath  String   // Đường dẫn lưu file trên server (ví dụ: uploads/abc.jpg)
-  fileType  String   // Định dạng file (ví dụ: image/jpeg, image/png)
   messageId Int
-  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+  filePath  String
+  fileType  String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
 
-// Bảng 6: Token làm mới dùng để gia hạn đăng nhập bảo mật
 model RefreshToken {
   id        Int      @id @default(autoincrement())
   token     String   @unique
   userId    Int
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
