@@ -3,6 +3,7 @@
 const conversationService = require("../services/conversationService");
 const aiStreamManager = require("../services/aiStreamManager");
 const redisStreamService = require("../services/redisStreamService");
+const conversationRepository = require("../repositories/conversationRepository");
 
 class ConversationController {
   // BKAV HaiHS : Tạo một cuộc hội thoại mới - start
@@ -211,6 +212,9 @@ class ConversationController {
           .json({ message: "Phòng chat đang có luồng xử lý hoạt động!" });
       }
 
+      // Lấy lịch sử tin nhắn để đếm prompt tokens chính xác
+      const historyMessages = await conversationRepository.getMessages(conversationId);
+
       // khởi tạo luồng SSE và bắt đầu xử lý chat
       await aiStreamManager.startBackgroundStream(
         conversationId,
@@ -224,6 +228,8 @@ class ConversationController {
             signal,
           ),
         modelName,
+        prompt,
+        historyMessages,
       );
 
       // cấu hình header cho luồng SSE

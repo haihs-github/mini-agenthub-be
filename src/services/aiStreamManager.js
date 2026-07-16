@@ -1,5 +1,12 @@
 const redisStreamService = require("./redisStreamService");
 const conversationRepository = require("../repositories/conversationRepository");
+const { getEncoding } = require("js-tiktoken");
+const tiktokenEncoder = getEncoding("cl100k_base");
+
+function countTokens(text) {
+  if (!text) return 0;
+  return tiktokenEncoder.encode(text).length;
+}
 
 // Cau truc: streamId -> { nextSeq, pending: Map<seq, event>, abortController, unsubscribe }
 const streams = new Map(); // map lưu các streamId luồng của các conversationId đang trả lời chat
@@ -31,8 +38,16 @@ class AIStreamManager {
   constructor() {}
 
   // BKAV HaiHS : Khởi chạy luồng AI - start
-  async startBackgroundStream(streamId, chatModelPromise, modelName) {
+  async startBackgroundStream(streamId, chatModelPromise, modelName, prompt, historyMessages) {
     const abortController = new AbortController();
+    
+    // Gộp prompt hiện tại và lịch sử chat để đếm chính xác số token ngữ cảnh
+    let fullPromptText = prompt || "";
+    if (historyMessages && Array.isArray(historyMessages)) {
+      fullPromptText += " " + historyMessages.map((m) => m.content || "").join(" ");
+    }
+    // Đếm số token thực tế qua tiktoken và cộng thêm 40 token định dạng chat template (roles, system instructions...)
+    const promptTokens = countTokens(fullPromptText) + 40;
 
     // tạo một luồng mới và lưu vào map streams để quản lý
     streams.set(streamId, {
@@ -44,7 +59,7 @@ class AIStreamManager {
       fullText: "",
       isFinished: false,
       modelName,
-      startTime: Date.now(),
+      promptTokens,
     });
 
     // xóa dữ liệu cũ trong Redis Stream (nếu có) và đánh dấu luồng này là đang active
@@ -149,6 +164,18 @@ class AIStreamManager {
 
         // phát tín hiệu done khi luồng kết thúc
         const currentStateDone = streams.get(streamId);
+        if (currentStateDone) {
+          if (!currentStateDone.usage) {
+            const promptTokens = currentStateDone.promptTokens || 0;
+            const completionTokens = countTokens(currentStateDone.fullText);
+            currentStateDone.usage = {
+              prompt_tokens: promptTokens,
+              completion_tokens: completionTokens,
+              total_tokens: promptTokens + completionTokens,
+            };
+          }
+        }
+
         const doneEvent = {
           type: "DONE",
           ...(currentStateDone &&
@@ -170,19 +197,20 @@ class AIStreamManager {
         // gửi tin nhắn đến fe
         const finalState = streams.get(streamId);
         if (finalState && !finalState.isFinished) {
-          const calculatedResponseTime = finalState.startTime
-            ? ((Date.now() - finalState.startTime) / 1000).toFixed(1) + "s"
-            : "1.2s";
-
+          finalState.isFinished = true;
+          const usage = finalState.usage || {
+            prompt_tokens: finalState.promptTokens || 0,
+            completion_tokens: countTokens(finalState.fullText),
+            total_tokens: (finalState.promptTokens || 0) + countTokens(finalState.fullText),
+          };
           await conversationRepository.createMessage({
             role: "assistant",
             content: finalState.fullText,
             modelName: finalState.modelName || "flowise",
             conversationId: streamId,
-            responseTime: calculatedResponseTime,
-            promptTokens: finalState.usage?.prompt_tokens || 0,
-            completionTokens: finalState.usage?.completion_tokens || 0,
-            totalTokens: finalState.usage?.total_tokens || 0,
+            promptTokens: usage.prompt_tokens,
+            completionTokens: usage.completion_tokens,
+            totalTokens: usage.total_tokens,
           });
         }
       } catch (err) {
@@ -202,31 +230,34 @@ class AIStreamManager {
             currentState.fullText.trim()
           ) {
             currentState.isFinished = true; // Danh dau truoc de tranh double-save
-            const calculatedResponseTime = currentState.startTime
-              ? ((Date.now() - currentState.startTime) / 1000).toFixed(1) + "s"
-              : "1.2s";
+            const promptTokens = currentState.promptTokens || 0;
+            const completionTokens = countTokens(currentState.fullText);
+            const usage = {
+              prompt_tokens: promptTokens,
+              completion_tokens: completionTokens,
+              total_tokens: promptTokens + completionTokens,
+            };
+            currentState.usage = usage;
 
             await conversationRepository.createMessage({
               role: "assistant",
               content: currentState.fullText,
               modelName: currentState.modelName || "flowise",
               conversationId: streamId,
-              responseTime: calculatedResponseTime,
-              promptTokens: currentState.usage?.prompt_tokens || 0,
-              completionTokens: currentState.usage?.completion_tokens || 0,
-              totalTokens: currentState.usage?.total_tokens || 0,
+              promptTokens: usage.prompt_tokens,
+              completionTokens: usage.completion_tokens,
+              totalTokens: usage.total_tokens,
             });
           }
           // Dong tat ca cac ket noi HTTP SSE cuc bo khi bi huy luong
           if (currentState) {
             if (!currentState.usage) {
-              const completionTokens = Math.round(
-                (currentState.fullText || "").length / 4,
-              );
+              const promptTokens = currentState.promptTokens || 0;
+              const completionTokens = countTokens(currentState.fullText);
               currentState.usage = {
-                prompt_tokens: 0,
+                prompt_tokens: promptTokens,
                 completion_tokens: completionTokens,
-                total_tokens: completionTokens,
+                total_tokens: promptTokens + completionTokens,
               };
             }
             const doneEvent = {
