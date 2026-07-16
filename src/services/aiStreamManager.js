@@ -60,6 +60,7 @@ class AIStreamManager {
       isFinished: false,
       modelName,
       promptTokens,
+      startTime: Date.now(),
     });
 
     // xóa dữ liệu cũ trong Redis Stream (nếu có) và đánh dấu luồng này là đang active
@@ -164,7 +165,12 @@ class AIStreamManager {
 
         // phát tín hiệu done khi luồng kết thúc
         const currentStateDone = streams.get(streamId);
+        let responseTime = "";
         if (currentStateDone) {
+          const elapsedMs = Date.now() - (currentStateDone.startTime || Date.now());
+          responseTime = (elapsedMs / 1000).toFixed(1) + "s";
+          currentStateDone.responseTime = responseTime;
+
           if (!currentStateDone.usage) {
             const promptTokens = currentStateDone.promptTokens || 0;
             const completionTokens = countTokens(currentStateDone.fullText);
@@ -178,8 +184,10 @@ class AIStreamManager {
 
         const doneEvent = {
           type: "DONE",
-          ...(currentStateDone &&
-            currentStateDone.usage && { usage: currentStateDone.usage }),
+          ...(currentStateDone && {
+            responseTime,
+            ...(currentStateDone.usage && { usage: currentStateDone.usage })
+          })
         };
         await redisStreamService.publishChunk(streamId, doneEvent);
 
@@ -203,6 +211,9 @@ class AIStreamManager {
             completion_tokens: countTokens(finalState.fullText),
             total_tokens: (finalState.promptTokens || 0) + countTokens(finalState.fullText),
           };
+          const elapsedMs = Date.now() - (finalState.startTime || Date.now());
+          const finalResponseTime = finalState.responseTime || ((elapsedMs / 1000).toFixed(1) + "s");
+
           await conversationRepository.createMessage({
             role: "assistant",
             content: finalState.fullText,
@@ -211,6 +222,7 @@ class AIStreamManager {
             promptTokens: usage.prompt_tokens,
             completionTokens: usage.completion_tokens,
             totalTokens: usage.total_tokens,
+            responseTime: finalResponseTime,
           });
         }
       } catch (err) {
@@ -239,6 +251,10 @@ class AIStreamManager {
             };
             currentState.usage = usage;
 
+            const elapsedMs = Date.now() - (currentState.startTime || Date.now());
+            const abortResponseTime = (elapsedMs / 1000).toFixed(1) + "s";
+            currentState.responseTime = abortResponseTime;
+
             await conversationRepository.createMessage({
               role: "assistant",
               content: currentState.fullText,
@@ -247,6 +263,7 @@ class AIStreamManager {
               promptTokens: usage.prompt_tokens,
               completionTokens: usage.completion_tokens,
               totalTokens: usage.total_tokens,
+              responseTime: abortResponseTime,
             });
           }
           // Dong tat ca cac ket noi HTTP SSE cuc bo khi bi huy luong
@@ -260,8 +277,12 @@ class AIStreamManager {
                 total_tokens: promptTokens + completionTokens,
               };
             }
+            const elapsedMs = Date.now() - (currentState.startTime || Date.now());
+            const abortResponseTime = currentState.responseTime || ((elapsedMs / 1000).toFixed(1) + "s");
+
             const doneEvent = {
               type: "DONE",
+              responseTime: abortResponseTime,
               usage: currentState.usage,
             };
             for (const handler of currentState.clientHandlers) {
@@ -332,10 +353,12 @@ class AIStreamManager {
       }
       // đóng kết nối nếu nhận được done
       else if (event.type === "DONE") {
-        if (event.usage) {
-          res.write(
-            `data: [DONE] ${JSON.stringify({ usage: event.usage })}\n\n`,
-          );
+        const donePayload = {};
+        if (event.usage) donePayload.usage = event.usage;
+        if (event.responseTime) donePayload.responseTime = event.responseTime;
+
+        if (Object.keys(donePayload).length > 0) {
+          res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
         } else {
           res.write("data: [DONE]\n\n");
         }
@@ -365,8 +388,12 @@ class AIStreamManager {
     // nếu stream đã xong thì ngắt kết nối
     if (state.isFinished) {
       state.clientHandlers.delete(onEvent);
-      if (state.usage) {
-        res.write(`data: [DONE] ${JSON.stringify({ usage: state.usage })}\n\n`);
+      const donePayload = {};
+      if (state.usage) donePayload.usage = state.usage;
+      if (state.responseTime) donePayload.responseTime = state.responseTime;
+
+      if (Object.keys(donePayload).length > 0) {
+        res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
       } else {
         res.write("data: [DONE]\n\n");
       }
@@ -394,10 +421,12 @@ class AIStreamManager {
         }
         // gửi xuống fe nếu đã lấy lịch sử xong
         if (event.type === "DONE" || event.type === "ABORT") {
-          if (event.usage) {
-            res.write(
-              `data: [DONE] ${JSON.stringify({ usage: event.usage })}\n\n`,
-            );
+          const donePayload = {};
+          if (event.usage) donePayload.usage = event.usage;
+          if (event.responseTime) donePayload.responseTime = event.responseTime;
+
+          if (Object.keys(donePayload).length > 0) {
+            res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
           } else {
             res.write("data: [DONE]\n\n");
           }
@@ -461,10 +490,12 @@ class AIStreamManager {
     if (historyDoneEvent) {
       await unsubscribe();
       if (connectionIsOpen) {
-        if (historyDoneEvent.usage) {
-          res.write(
-            `data: [DONE] ${JSON.stringify({ usage: historyDoneEvent.usage })}\n\n`,
-          );
+        const donePayload = {};
+        if (historyDoneEvent.usage) donePayload.usage = historyDoneEvent.usage;
+        if (historyDoneEvent.responseTime) donePayload.responseTime = historyDoneEvent.responseTime;
+
+        if (Object.keys(donePayload).length > 0) {
+          res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
         } else {
           res.write("data: [DONE]\n\n");
         }
@@ -481,10 +512,12 @@ class AIStreamManager {
       if (!connectionIsOpen) break;
       if (event.type === "DONE" || event.type === "ABORT") {
         await unsubscribe();
-        if (event.usage) {
-          res.write(
-            `data: [DONE] ${JSON.stringify({ usage: event.usage })}\n\n`,
-          );
+        const donePayload = {};
+        if (event.usage) donePayload.usage = event.usage;
+        if (event.responseTime) donePayload.responseTime = event.responseTime;
+
+        if (Object.keys(donePayload).length > 0) {
+          res.write(`data: [DONE] ${JSON.stringify(donePayload)}\n\n`);
         } else {
           res.write("data: [DONE]\n\n");
         }
