@@ -145,25 +145,42 @@ class GroupRepository {
         }
       : {};
 
-    const [groups, total] = await Promise.all([
-      prisma.group.findMany({
-        where,
-        skip,
-        take,
-        orderBy: [
-          { name: "asc" },
-          { id: "asc" },
-        ],
-        include: {
-          _count: {
-            select: { users: true },
-          },
+    // Lấy toàn bộ các nhóm khớp để sắp xếp độ liên quan ở RAM
+    const allMatchingGroups = await prisma.group.findMany({
+      where,
+      orderBy: [
+        { name: "asc" },
+        { id: "asc" },
+      ],
+      include: {
+        _count: {
+          select: { users: true },
         },
-      }),
-      prisma.group.count({ where }),
-    ]);
+      },
+    });
 
-    return { groups, total };
+    let sortedGroups = allMatchingGroups;
+
+    if (keyword) {
+      const lowerKeyword = keyword.toLowerCase();
+      sortedGroups = [...allMatchingGroups].sort((a, b) => {
+        const indexA = a.name.toLowerCase().indexOf(lowerKeyword);
+        const indexB = b.name.toLowerCase().indexOf(lowerKeyword);
+
+        // Ưu tiên vị trí xuất hiện của từ khóa sớm hơn (ví dụ: 'group 1' có 'r' ở vị trí 1 tốt hơn 'Hỗ trợ' có 'r' ở vị trí 7)
+        if (indexA !== indexB) {
+          return indexA - indexB;
+        }
+
+        // Nếu cùng vị trí, sắp xếp theo bảng chữ cái tiếng Việt
+        return a.name.localeCompare(b.name, "vi");
+      });
+    }
+
+    const total = sortedGroups.length;
+    const paginatedGroups = sortedGroups.slice(skip, skip + take);
+
+    return { groups: paginatedGroups, total };
   }
   // BKAV HaiHS : Tìm kiếm nhóm và đếm tổng số bản ghi - end
 }
