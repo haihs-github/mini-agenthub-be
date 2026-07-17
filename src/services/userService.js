@@ -152,7 +152,7 @@ class UserService {
     }
 
     const result = await userRepository.update(userId, updateData);
-    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - start
+    // Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - start
     await redisStreamService.cacheDel(`user:${userId}:profile`);
     await redisStreamService.cacheDel(`user:${userId}:permissions`);
     await redisStreamService.cacheDelPattern("users:page:*");
@@ -165,7 +165,6 @@ class UserService {
     for (const gId of allAffectedGroupIds) {
       await redisStreamService.cacheDel(`group:${gId}:profile`);
     }
-    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - end
     return result;
   }
   // BKAV HaiHS : cập nhật người dùng - end

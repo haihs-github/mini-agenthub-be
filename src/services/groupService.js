@@ -75,7 +75,7 @@ class GroupService {
   async addUsersToGroup(groupId, userIds) {
     const group = await groupRepository.findById(groupId);
     if (!group) {
-      throw new AppError(ERROR.GROUP.ALREADY_EXISTS);
+      throw new AppError(ERROR.GROUP.NOT_FOUND);
     }
 
     // Bỏ check trống mảng vì Controller đã chặn từ xa

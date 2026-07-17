@@ -347,7 +347,9 @@ class RedisStreamService {
       }
     }
     // Xóa trong bộ nhớ RAM
-    const regex = new RegExp("^" + pattern.replace("*", ".*") + "$");
+    // Tránh lỗi chỉ replace ký tự * đầu tiên, dùng Regex thay thế toàn bộ dấu * thành .*
+    const escapedPattern = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp("^" + escapedPattern.replace(/\*/g, ".*") + "$");
     for (const key of this.memoryCache.keys()) {
       if (regex.test(key)) {
         this.memoryCache.delete(key);
