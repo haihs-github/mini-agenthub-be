@@ -43,7 +43,9 @@ class UserService {
 
     // BKAV HaiHS : Xóa cache phân trang người dùng, phân trang nhóm và thông tin nhóm liên quan - start
     await redisStreamService.cacheDelPattern("users:page:*");
+    await redisStreamService.cacheDelPattern("users:page:*:search:*");
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
     if (groupIds && groupIds.length > 0) {
       for (const gId of groupIds) {
         await redisStreamService.cacheDel(`group:${gId}:profile`);
@@ -152,19 +154,19 @@ class UserService {
     }
 
     const result = await userRepository.update(userId, updateData);
-    // Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - start
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - start
     await redisStreamService.cacheDel(`user:${userId}:profile`);
     await redisStreamService.cacheDel(`user:${userId}:permissions`);
     await redisStreamService.cacheDelPattern("users:page:*");
+    await redisStreamService.cacheDelPattern("users:page:*:search:*");
     await redisStreamService.cacheDelPattern("groups:page:*");
-
-    const allAffectedGroupIds = new Set([
-      ...previousGroupIds,
-      ...(groupIds || []),
-    ]);
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
+    
+    const allAffectedGroupIds = new Set([...previousGroupIds, ...(groupIds || [])]);
     for (const gId of allAffectedGroupIds) {
       await redisStreamService.cacheDel(`group:${gId}:profile`);
     }
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - end
     return result;
   }
   // BKAV HaiHS : cập nhật người dùng - end
@@ -184,7 +186,9 @@ class UserService {
     await redisStreamService.cacheDel(`user:${userId}:profile`);
     await redisStreamService.cacheDel(`user:${userId}:permissions`);
     await redisStreamService.cacheDelPattern("users:page:*");
+    await redisStreamService.cacheDelPattern("users:page:*:search:*");
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
     for (const gId of affectedGroupIds) {
       await redisStreamService.cacheDel(`group:${gId}:profile`);
     }

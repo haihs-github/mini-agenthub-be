@@ -28,6 +28,7 @@ class GroupService {
     const group = await groupRepository.create(groupData);
     //  Xóa cache danh sách nhóm và danh sách phân trang người dùng nếu có gán user
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
     if (userIds.length > 0) {
       await redisStreamService.cacheDelPattern("users:page:*");
     }
@@ -60,9 +61,10 @@ class GroupService {
     }
 
     const updated = await groupRepository.update(groupId, updateData);
-    // BKAV HaiHS : Xóa cache nhóm và phân quyền của toàn bộ user liên quan - start
+    // BKAV HaiHS : Xóa cache nhóm, cache tìm kiếm và phân quyền của toàn bộ user liên quan - start
     await redisStreamService.cacheDel(`group:${groupId}:profile`);
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
     await redisStreamService.cacheDelPattern("user:*:permissions");
     await redisStreamService.cacheDelPattern("user:*:profile");
     await redisStreamService.cacheDelPattern("users:page:*");
@@ -80,9 +82,10 @@ class GroupService {
 
     // Bỏ check trống mảng vì Controller đã chặn từ xa
     const result = await groupRepository.addUsersToGroup(groupId, userIds);
-    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang và phân quyền của các user liên quan - start
+    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang, tìm kiếm và phân quyền của các user liên quan - start
     await redisStreamService.cacheDel(`group:${groupId}:profile`);
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
     await redisStreamService.cacheDelPattern("users:page:*");
     for (const userId of userIds) {
       await redisStreamService.cacheDel(`user:${userId}:permissions`);
@@ -101,9 +104,10 @@ class GroupService {
     }
 
     const result = await groupRepository.delete(groupId);
-    // BKAV HaiHS : Xóa cache nhóm và phân quyền của toàn bộ user liên quan - start
+    // BKAV HaiHS : Xóa cache nhóm, cache tìm kiếm và phân quyền của toàn bộ user liên quan - start
     await redisStreamService.cacheDel(`group:${groupId}:profile`);
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
     await redisStreamService.cacheDelPattern("user:*:permissions");
     await redisStreamService.cacheDelPattern("user:*:profile");
     await redisStreamService.cacheDelPattern("users:page:*");
@@ -120,9 +124,10 @@ class GroupService {
     }
 
     const result = await groupRepository.removeUsersFromGroup(groupId, userIds);
-    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang và phân quyền của các user liên quan - start
+    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang, tìm kiếm và phân quyền của các user liên quan - start
     await redisStreamService.cacheDel(`group:${groupId}:profile`);
     await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
     await redisStreamService.cacheDelPattern("users:page:*");
     for (const userId of userIds) {
       await redisStreamService.cacheDel(`user:${userId}:permissions`);
