@@ -5,7 +5,7 @@ class UserController {
   async createUser(req, res, next) {
     try {
       // Lấy dữ liệu và chuẩn hóa
-      const email = req.body.email?.trim();
+      const email = req.body.email?.trim().toLowerCase();
       const fullname = req.body.fullname?.trim();
       let groupIds = req.body.groupIds;
 
@@ -14,7 +14,9 @@ class UserController {
         return res.status(400).json({ message: "Bắt buộc phải nhập Email!" });
       }
       if (!fullname) {
-        return res.status(400).json({ message: "Bắt buộc phải nhập Họ và tên!" });
+        return res
+          .status(400)
+          .json({ message: "Bắt buộc phải nhập Họ và tên!" });
       }
 
       // Kiểm tra định dạng cấu trúc Email
@@ -114,7 +116,7 @@ class UserController {
     try {
       // lấy dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.params.id);
-      const email = req.body.email?.trim();
+      const email = req.body.email?.trim().toLowerCase();
       const fullname = req.body.fullname?.trim();
       let groupIds = req.body.groupIds;
 
