@@ -41,6 +41,16 @@ class UserService {
     // Lưu vào Database thông qua Repo thành công
     const newUser = await userRepository.create(userData);
 
+    // BKAV HaiHS : Xóa cache phân trang người dùng, phân trang nhóm và thông tin nhóm liên quan - start
+    await redisStreamService.cacheDelPattern("users:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*");
+    if (groupIds && groupIds.length > 0) {
+      for (const gId of groupIds) {
+        await redisStreamService.cacheDel(`group:${gId}:profile`);
+      }
+    }
+    // BKAV HaiHS : Xóa cache phân trang người dùng, phân trang nhóm và thông tin nhóm liên quan - end
+
     // Tách biệt hoàn toàn rủi ro của dịch vụ Email mạng ngoài với trạng thái DB
     try {
       await emailService.sendWelcomeEmail(email, tempPassword);
@@ -112,15 +122,17 @@ class UserService {
 
   // BKAV HaiHS : cập nhật người dùng - start
   async updateUser(userId, email, fullname, groupIds) {
-    const user = await userRepository.findById(userId);
-    if (!user) {
+    // Lấy thông tin người dùng kèm danh sách nhóm trước khi cập nhật để xóa cache chính xác - start
+    const userWithGroups = await userRepository.findByIdDetailed(userId);
+    if (!userWithGroups) {
       throw new AppError(ERROR.USER.NOT_FOUND);
     }
+    const previousGroupIds = userWithGroups.groups?.map((g) => g.id) || [];
 
     const updateData = {};
 
     // Logic kiểm tra chặn trùng Email
-    if (email && email !== user.email) {
+    if (email && email !== userWithGroups.email) {
       const existingUser = await userRepository.findByEmail(email);
       if (existingUser) {
         throw new AppError(ERROR.USER.EMAIL_EXISTS);
@@ -140,28 +152,44 @@ class UserService {
     }
 
     const result = await userRepository.update(userId, updateData);
-    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - start
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - start
     await redisStreamService.cacheDel(`user:${userId}:profile`);
     await redisStreamService.cacheDel(`user:${userId}:permissions`);
     await redisStreamService.cacheDelPattern("users:page:*");
-    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - end
+    await redisStreamService.cacheDelPattern("groups:page:*");
+
+    const allAffectedGroupIds = new Set([
+      ...previousGroupIds,
+      ...(groupIds || []),
+    ]);
+    for (const gId of allAffectedGroupIds) {
+      await redisStreamService.cacheDel(`group:${gId}:profile`);
+    }
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - end
     return result;
   }
   // BKAV HaiHS : cập nhật người dùng - end
 
   // BKAV HaiHS : xóa người dùng - start
   async deleteUser(userId) {
-    const user = await userRepository.findById(userId);
-    if (!user) {
+    // BKAV HaiHS : Lấy thông tin người dùng kèm nhóm để xóa cache nhóm sau khi xóa người dùng - start
+    const userWithGroups = await userRepository.findByIdDetailed(userId);
+    if (!userWithGroups) {
       throw new AppError(ERROR.USER.NOT_FOUND);
     }
+    const affectedGroupIds = userWithGroups.groups?.map((g) => g.id) || [];
+    // BKAV HaiHS : Lấy thông tin người dùng kèm nhóm để xóa cache nhóm sau khi xóa người dùng - end
 
     const result = await userRepository.delete(userId);
-    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - start
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - start
     await redisStreamService.cacheDel(`user:${userId}:profile`);
     await redisStreamService.cacheDel(`user:${userId}:permissions`);
     await redisStreamService.cacheDelPattern("users:page:*");
-    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền và danh sách phân trang - end
+    await redisStreamService.cacheDelPattern("groups:page:*");
+    for (const gId of affectedGroupIds) {
+      await redisStreamService.cacheDel(`group:${gId}:profile`);
+    }
+    // BKAV HaiHS : Xóa cache thông tin cá nhân, phân quyền, nhóm và danh sách phân trang - end
     return result;
   }
   // BKAV HaiHS : xóa người dùng - end
