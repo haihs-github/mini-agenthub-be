@@ -20,7 +20,10 @@ class DynamicStore {
   async ensureRedisStoreInitialized() {
     if (this.redisStore) return true;
 
-    if (redisStreamService.isRedisConnected && redisStreamService.ioredisClient) {
+    if (
+      redisStreamService.isRedisConnected &&
+      redisStreamService.ioredisClient
+    ) {
       try {
         this.redisStore = new RedisStore({
           sendCommand: (...args) => {
@@ -38,7 +41,10 @@ class DynamicStore {
         }
         return true;
       } catch (err) {
-        console.warn(`[RateLimit] Failed to initialize RedisStore lazily:`, err.message);
+        console.warn(
+          `[RateLimit] Failed to initialize RedisStore lazily:`,
+          err.message,
+        );
         this.redisStore = null; // Reset để thử lại ở request sau
         return false;
       }
@@ -53,7 +59,10 @@ class DynamicStore {
       try {
         return await this.redisStore.increment(key);
       } catch (err) {
-        console.warn(`[RateLimit Warning] RedisStore error, falling back to MemoryStore:`, err.message);
+        console.warn(
+          `[RateLimit Warning] RedisStore error, falling back to MemoryStore:`,
+          err.message,
+        );
         this.redisStore = null; // Reset để khởi tạo lại khi Redis kết nối lại
       }
     }
@@ -165,11 +174,12 @@ const chatLimiter = rateLimit({
   message: {
     status: "fail",
     code: "RATE_LIMIT_CHAT",
-    message: "Bạn đã vượt giới hạn chat 10 tin nhắn/phút. Vui lòng đợi và thử lại!",
+    message:
+      "Bạn đã vượt giới hạn chat 10 tin nhắn/phút. Vui lòng đợi và thử lại!",
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.userId ? String(req.userId) : req['ip'],
+  keyGenerator: (req) => (req.userId ? String(req.userId) : req["ip"]),
   validate: false,
 });
 
@@ -185,7 +195,7 @@ const heavyQueryLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.userId ? String(req.userId) : req['ip'],
+  keyGenerator: (req) => (req.userId ? String(req.userId) : req["ip"]),
   validate: false,
 });
 
@@ -197,11 +207,12 @@ const writeDbLimiter = rateLimit({
   message: {
     status: "fail",
     code: "RATE_LIMIT_WRITE",
-    message: "Bạn đang thực hiện quá nhiều thao tác thay đổi dữ liệu. Vui lòng đợi!",
+    message:
+      "Bạn đang thực hiện quá nhiều thao tác thay đổi dữ liệu. Vui lòng đợi!",
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.userId ? String(req.userId) : req['ip'],
+  keyGenerator: (req) => (req.userId ? String(req.userId) : req["ip"]),
   validate: false,
 });
 
