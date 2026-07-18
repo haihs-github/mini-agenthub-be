@@ -1,4 +1,5 @@
 const userService = require("../services/userService");
+const { MESSAGES } = require("../constants/messages");
 
 class UserController {
   // BKAV HaiHS : tạo người dùng mới - start
@@ -11,27 +12,21 @@ class UserController {
 
       // Kiểm tra các trường bắt buộc
       if (!email) {
-        return res.status(400).json({ message: "Bắt buộc phải nhập Email!" });
+        return res.status(400).json({ message: MESSAGES.USER.EMPTY_EMAIL });
       }
       if (!fullname) {
-        return res
-          .status(400)
-          .json({ message: "Bắt buộc phải nhập Họ và tên!" });
+        return res.status(400).json({ message: MESSAGES.USER.EMPTY_NAME });
       }
 
-      // Kiểm tra định dạng cấu trúc Email
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        return res
-          .status(400)
-          .json({ message: "Định dạng Email không hợp lệ!" });
+        return res.status(400).json({ message: MESSAGES.USER.INVALID_EMAIL });
       }
 
-      // Kiểm tra và ép kiểu mảng groupIds đầu vào nếu có
       if (groupIds) {
         if (!Array.isArray(groupIds)) {
           return res.status(400).json({
-            message: "Dữ liệu groupIds truyền lên bắt buộc phải là một mảng!",
+            message: MESSAGES.USER.INVALID_ARRAY,
           });
         }
         groupIds = groupIds
@@ -39,16 +34,14 @@ class UserController {
           .filter((id) => !isNaN(id));
       }
 
-      // gọi hàm createUserByAdmin của userService để tạo người dùng mới
       const result = await userService.createUserByAdmin(
         email,
         fullname,
         groupIds,
       );
 
-      // trả về kết quả cho người dùng
       res.status(201).json({
-        message: "Tạo tài khoản và gửi Email thành công!",
+        message: MESSAGES.USER.CREATE,
         data: result,
       });
     } catch (error) {
@@ -60,22 +53,18 @@ class UserController {
   // BKAV HaiHS : lấy danh sách người dùng phân trang - start
   async getAllUsers(req, res, next) {
     try {
-      // lấy dữ liệu từ req và chuẩn hóa
       let { page, limit } = req.query;
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 
-      // Kiểm tra các giới hạn trên và dưới khi phân trang
       if (page < 1) page = 1;
       if (limit < 1) limit = 10;
-      if (limit > 100) limit = 100; // Bảo vệ hệ thống khỏi bão càn quét dữ liệu lớn
+      if (limit > 100) limit = 100;
 
-      // gọi hàm getAllUsers của userService để lấy danh sách người dùng có phân trang
       const result = await userService.getAllUsers(page, limit);
 
-      // trả về kết quả cho người dùng
       res.status(200).json({
-        message: "Lấy danh sách người dùng thành công!",
+        message: MESSAGES.USER.GET_LIST,
         data: result.users,
         pagination: result.pagination,
       });
@@ -88,21 +77,16 @@ class UserController {
   // BKAV HaiHS : lấy chi tiết người dùng - start
   async getUserDetail(req, res, next) {
     try {
-      // lấy dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.params.id);
 
-      // Kiểm tra xem userId có phải là số nguyên không?
       if (isNaN(userId)) {
-        return res
-          .status(400)
-          .json({ message: "ID người dùng phải là một số nguyên hợp lệ!" });
+        return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
-      // gọi hàm getUserDetail của userService để lấy chi tiết thông tin người dùng
+
       const result = await userService.getUserDetail(userId);
 
-      // trả về kết quả cho người dùng
       res.status(200).json({
-        message: "Lấy thông tin chi tiết người dùng thành công!",
+        message: MESSAGES.USER.GET_DETAIL,
         data: result,
       });
     } catch (error) {
@@ -114,20 +98,15 @@ class UserController {
   // BKAV HaiHS : cập nhật người dùng - start
   async updateUser(req, res, next) {
     try {
-      // lấy dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.params.id);
       const email = req.body.email?.trim().toLowerCase();
       const fullname = req.body.fullname?.trim();
       let groupIds = req.body.groupIds;
 
-      // Kiểm tra xem userId có phải là số nguyên không?
       if (isNaN(userId)) {
-        return res
-          .status(400)
-          .json({ message: "ID người dùng phải là một số nguyên hợp lệ!" });
+        return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
 
-      // Kiểm tra định dạng Email nếu người dùng có truyền lên để cập nhật
       if (email) {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
@@ -137,18 +116,16 @@ class UserController {
         }
       }
 
-      // Chặn cập nhật họ tên rỗng
       if (fullname !== undefined && fullname === "") {
         return res
           .status(400)
           .json({ message: "Họ và tên không được để trống!" });
       }
 
-      // Kiểm tra và ép kiểu mảng groupIds đầu vào nếu có
       if (groupIds) {
         if (!Array.isArray(groupIds)) {
           return res.status(400).json({
-            message: "Dữ liệu groupIds truyền lên bắt buộc phải là một mảng!",
+            message: MESSAGES.USER.INVALID_ARRAY,
           });
         }
         groupIds = groupIds
@@ -156,7 +133,6 @@ class UserController {
           .filter((id) => !isNaN(id));
       }
 
-      // gọi hàm updateUser của userService để cập nhật thông tin người dùng
       const result = await userService.updateUser(
         userId,
         email,
@@ -164,9 +140,8 @@ class UserController {
         groupIds,
       );
 
-      // trả về kết quả cho người dùng
       res.status(200).json({
-        message: "Cập nhật thông tin người dùng thành công!",
+        message: MESSAGES.USER.UPDATE,
         data: result,
       });
     } catch (error) {
@@ -178,22 +153,16 @@ class UserController {
   // BKAV HaiHS : xóa người dùng - start
   async deleteUser(req, res, next) {
     try {
-      // lấy dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.params.id);
 
-      // Kiểm tra xem userId có phải là số nguyên không?
       if (isNaN(userId)) {
-        return res
-          .status(400)
-          .json({ message: "ID người dùng phải là một số nguyên hợp lệ!" });
+        return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
 
-      // gọi hàm deleteUser của userService để xóa người dùng
       await userService.deleteUser(userId);
 
-      // trả về kết quả cho người dùng
       res.status(200).json({
-        message: "Xóa tài khoản người dùng thành công!",
+        message: MESSAGES.USER.DELETE,
       });
     } catch (error) {
       next(error);
@@ -204,11 +173,9 @@ class UserController {
   // BKAV HaiHS : tìm kiếm và phân trang người dùng - start
   async searchUsers(req, res, next) {
     try {
-      // lấy dữ liệu từ req và chuẩn hóa
       const keyword = req.query.keyword?.trim() || "";
       let { page, limit } = req.query;
 
-      // ĐÃ SỬA [tienpv]: Bổ sung kiểm tra giới hạn dưới và giới hạn trên phân trang cho API Search
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 
@@ -216,12 +183,10 @@ class UserController {
       if (limit < 1) limit = 10;
       if (limit > 100) limit = 100;
 
-      // gọi hàm searchUsers của userService để tìm kiếm người dùng theo từ khóa và phân trang
       const result = await userService.searchUsers(keyword, page, limit);
 
-      // trả về kết quả cho người dùng
       res.status(200).json({
-        message: "Tìm kiếm người dùng thành công!",
+        message: MESSAGES.USER.SEARCH,
         data: result.users,
         pagination: result.pagination,
       });
@@ -239,7 +204,6 @@ class UserController {
       const phone = req.body.phone?.trim();
       const address = req.body.address?.trim();
 
-      // Nếu người dùng có truyền số điện thoại, bắt buộc phải đúng định dạng
       if (phone) {
         const phoneRegex = /^\d{10}$/; // Chỉ chứa số và có đúng 10 ký tự
         if (!phoneRegex.test(phone)) {
@@ -250,15 +214,13 @@ class UserController {
         }
       }
 
-      // gọi hàm updateMyProfile của userService để cập nhật thông tin cá nhân
       const result = await userService.updateMyProfile(userId, {
         phone,
         address,
       });
 
-      // trả về kết quả cho người dùng
       res.status(200).json({
-        message: "Cập nhật thông tin cá nhân thành công!",
+        message: MESSAGES.USER.UPDATE_PROFILE,
         data: {
           token: result.token,
           user: result.user,
@@ -273,14 +235,10 @@ class UserController {
   // BKAV HaiHS : Tự xóa tài khoản của chính mình - start
   async deleteMyAccount(req, res, next) {
     try {
-      // nhận dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.userId);
 
-      // kiểm tra xem userId có phải là số nguyên không?
       if (isNaN(userId)) {
-        return res
-          .status(400)
-          .json({ message: "Danh tính người dùng không hợp lệ!" });
+        return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
 
       // gọi hàm deleteMyAccount của userService để xóa tài khoản cá nhân
@@ -288,8 +246,7 @@ class UserController {
 
       // trả về kết quả cho người dùng
       res.status(200).json({
-        message:
-          "Xóa tài khoản cá nhân của bạn thành công! Toàn bộ lịch sử và dữ liệu liên quan đã được hủy bỏ hoàn toàn.",
+        message: MESSAGES.USER.DELETE_MY_ACCOUNT,
       });
     } catch (error) {
       next(error);

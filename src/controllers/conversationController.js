@@ -4,24 +4,22 @@ const conversationService = require("../services/conversationService");
 const aiStreamManager = require("../services/aiStreamManager");
 const redisStreamService = require("../services/redisStreamService");
 const conversationRepository = require("../repositories/conversationRepository");
+const { MESSAGES } = require("../constants/messages");
 
 class ConversationController {
   // BKAV HaiHS : Tạo một cuộc hội thoại mới - start
   async createConversation(req, res, next) {
     try {
-      // lấy dữ liệu từ req, và chuẩn hóa dữ liệu
       const userId = parseInt(req.userId);
-      const title = req.body.title?.trim() || "Cuộc hội thoại mới";
+      const title = req.body.title?.trim();
 
-      // gửi dữ liệu cho hàm createConversation của lớp conversationService
       const result = await conversationService.createConversation(
         userId,
         title,
       );
 
-      // trả về res cho người dùng
       res.status(201).json({
-        message: "Khởi tạo cuộc hội thoại mới thành công!",
+        message: MESSAGES.CONVERSATION.CREATED,
         data: result,
       });
     } catch (error) {
@@ -36,14 +34,11 @@ class ConversationController {
       const userId = parseInt(req.userId);
       let { page, limit } = req.query;
 
-      // FIXME: [tienpv]: Thiếu kiểm tra giới hạn dưới của phân trang (page < 1, limit < 1)
       page = parseInt(page) || 1;
       limit = parseInt(limit) || 10;
 
-      // FIXED: HaiHS : kiểm tra giới hạn dưới - start
       if (page < 1) page = 1;
       if (limit < 1) limit = 10;
-      // FIXED: HaiHS : kiểm tra giới hạn dưới - end
 
       const result = await conversationService.getUserConversations(
         userId,
@@ -52,7 +47,7 @@ class ConversationController {
       );
 
       res.status(200).json({
-        message: "Lấy danh sách cuộc hội thoại thành công!",
+        message: MESSAGES.CONVERSATION.GET_LIST,
         data: result.conversations,
         pagination: result.pagination,
       });
@@ -65,26 +60,22 @@ class ConversationController {
   // BKAV HaiHS : Lấy lịch sử  tin nhắn của một phòng chat theo conversationId- start
   async getConversationDetail(req, res, next) {
     try {
-      // lấy dữ liệu từ req, và chuẩn hóa dữ liệu
       const userId = parseInt(req.userId);
       const conversationId = parseInt(req.params.id);
 
-      // Đón nhận các param phân trang cho tin nhắn bên trong khung chat
       let { page, limit } = req.query;
       page = parseInt(page) || 1;
-      limit = parseInt(limit) || 20; // Mặc định hiển thị 20 tin nhắn gần nhất mỗi lần load
+      limit = parseInt(limit) || 20;
 
-      //  kiểm tra xem conversationId có phải là số nguyên hợp lệ ko?
       if (isNaN(conversationId)) {
         return res
           .status(400)
-          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
 
       if (page < 1) page = 1;
       if (limit < 1) limit = 20;
 
-      // Truyền dữ liệu xuống hàm getConversationDetail cho conversationService xử lý
       const result = await conversationService.getConversationDetail(
         conversationId,
         userId,
@@ -94,12 +85,11 @@ class ConversationController {
 
       // trả kết quả cho người dùng
       res.status(200).json({
-        message: "Lấy chi tiết cuộc hội thoại và lịch sử tin nhắn thành công!",
+        message: MESSAGES.CONVERSATION.GET_DETAIL,
         data: {
           ...result,
           isStreaming: await aiStreamManager.isStreamActive(conversationId),
         },
-        // Gửi kèm trạng thái phân trang tin nhắn hiện tại để FE biết đường gọi tiếp khi User cuộn chuột lên top
         pagination: {
           currentPage: page,
           limit: limit,
@@ -114,31 +104,27 @@ class ConversationController {
   // BKAV HaiHS : Cập nhật tiêu đề conversations - start
   async updateTitle(req, res, next) {
     try {
-      // lấy dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.userId);
       const conversationId = parseInt(req.params.id);
       const title = req.body.title?.trim();
 
-      // kiểm tra conversatoinId có phải số nguyên không?
       if (isNaN(conversationId)) {
         return res
           .status(400)
-          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
       // kiểm tra xem tiêu đề có bị trống không?
       if (!title) {
         return res
           .status(400)
-          .json({ message: "Tiêu đề cuộc hội thoại không được để trống!" });
+          .json({ message: MESSAGES.CONVERSATION.EMPTY_TITLE });
       }
-      // Chuyển dữ liệu xuống hàm updateConversationTitle của conversationService
       await conversationService.updateConversationTitle(
         conversationId,
         userId,
         title,
       );
 
-      // trả kết quả về cho người dùng
       res.status(200).json({
         message: "Cập nhật tiêu đề cuộc hội thoại thành công!",
       });
@@ -151,26 +137,22 @@ class ConversationController {
   // BKAV HaiHS : Xóa conversations - start
   async deleteConversation(req, res, next) {
     try {
-      // nhận dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.userId);
       const conversationId = parseInt(req.params.id);
 
-      // kiểm tra xem conversationId phải số nguyên ko?
       if (isNaN(conversationId)) {
         return res
           .status(400)
-          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
 
-      //  chuyển dữ liệu xuồng hàm deleteConversation của conversationService để xử lý
       await conversationService.deleteConversation(conversationId, userId);
 
       // trả lại kết quả cho người dùng
       res.status(200).json({
-        message: "Xóa cuộc hội thoại thành công!",
+        message: MESSAGES.CONVERSATION.DELETE,
       });
     } catch (error) {
-      // ném lỗi cho errorHandler xử lý
       next(error);
     }
   }
@@ -186,34 +168,30 @@ class ConversationController {
       const { modelName } = req.body;
       const files = req.files || [];
 
-      // kiểm tra xem conversationId có phải số nguyên ko?
       if (isNaN(conversationId)) {
         return res
           .status(400)
-          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
-      // kiểm tra xem prompt có bị trống không?
       if (!prompt) {
         return res
           .status(400)
-          .json({ message: "Nội dung câu hỏi không được để trống!" });
+          .json({ message: MESSAGES.CONVERSATION.EMPTY_PROMPT });
       }
-      //  kiểm tra xem modelName có bị trống không?
       if (!modelName) {
         return res
           .status(400)
-          .json({ message: "Tên mô hình AI không được để trống!" });
+          .json({ message: MESSAGES.CONVERSATION.EMPTY_MODEL });
       }
 
-      // kiểm tra xem luồng SSE của conversation này đã chạy chưa? tránh trường hợp spam gửi yêu cầu tạo nhiều luồng chat
       if (await aiStreamManager.isStreamActive(conversationId)) {
         return res
           .status(400)
-          .json({ message: "Phòng chat đang có luồng xử lý hoạt động!" });
+          .json({ message: MESSAGES.CONVERSATION.ACTIVE_STREAM_ERROR });
       }
 
-      // Lấy lịch sử tin nhắn để đếm prompt tokens chính xác
-      const historyMessages = await conversationRepository.getMessages(conversationId);
+      const historyMessages =
+        await conversationRepository.getMessages(conversationId);
 
       // khởi tạo luồng SSE và bắt đầu xử lý chat
       await aiStreamManager.startBackgroundStream(
@@ -238,7 +216,6 @@ class ConversationController {
       res.setHeader("Connection", "keep-alive"); // giữ kết nối mở để nhận cá gói tin liên tục
       res.setHeader("X-Accel-Buffering", "no"); // BKAV HaiHS : Tat buffering cua Nginx de SSE truyen ngay lap tuc
 
-      // gọi hàm connectClient để kết nối client với luồng SSE đang chạy
       await aiStreamManager.connectClient(conversationId, res);
     } catch (error) {
       next(error);
@@ -249,14 +226,12 @@ class ConversationController {
   // BKAV HaiHS : Kết nối lại vào luồng SSE đang chạy - start
   async handleStreamReconnect(req, res, next) {
     try {
-      // Lấy dữ liệu từ req và chuẩn hóa
       const conversationId = parseInt(req.params.id);
 
-      // kiểm tra xem conversationId có phải số nguyên ko?
       if (isNaN(conversationId)) {
         return res
           .status(400)
-          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
 
       // cấu hình header cho luồng SSE
@@ -265,10 +240,8 @@ class ConversationController {
       res.setHeader("Connection", "keep-alive"); // giữ kết nối mở để nhận cá gói tin liên tục
       res.setHeader("X-Accel-Buffering", "no"); // BKAV HaiHS : Tat buffering cua Nginx de SSE truyen ngay lap tuc
 
-      // Kết nối lại client với luồng SSE đang chạy
       await aiStreamManager.subscribeWithResume(conversationId, res);
     } catch (error) {
-      // Gửi lỗi cho middleware xử lý
       next(error);
     }
   }
@@ -277,13 +250,11 @@ class ConversationController {
   // BKAV HaiHS : Hủy bỏ luồng SSE của server vs fe, khi chuyển conversation, mất mạng, f5,... - start
   async handleAbort(req, res, next) {
     try {
-      // nhận dữ liệu từ req và chuẩn hóa
       const conversationId = parseInt(req.params.id);
-      // kiểm tra xem conversationId có phải số nguyên ko?
       if (isNaN(conversationId)) {
         return res
           .status(400)
-          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
       // Gọi hàm abortSession để hủy bỏ luồng SSE đang chạy
       await aiStreamManager.abortSession(conversationId);
@@ -301,11 +272,11 @@ class ConversationController {
       if (isNaN(conversationId)) {
         return res
           .status(400)
-          .json({ message: "ID cuộc hội thoại phải là một số nguyên hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
 
       await aiStreamManager.abortSession(conversationId);
-      res.status(200).json({ message: "Dừng luồng stream thành công!" });
+      res.status(200).json({ message: MESSAGES.CONVERSATION.ABORT_SIGNAL });
     } catch (error) {
       next(error);
     }
@@ -315,24 +286,20 @@ class ConversationController {
   // BKAV HaiHS : Xóa toàn bộ lịch sử chat của chính mình - start
   async clearAllConversations(req, res, next) {
     try {
-      // lấy dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.userId);
 
-      // kiểm tra xem userId có phải số nguyên ko?
       if (isNaN(userId)) {
         return res
           .status(400)
-          .json({ message: "Danh tính người dùng không hợp lệ!" });
+          .json({ message: MESSAGES.CONVERSATION.INVALID_ID });
       }
 
-      // Gọi hàm clearAllConversations của conversationService để xóa toàn bộ lịch sử chat của user
       const result = await conversationService.clearAllConversations(userId);
 
-      // trả kết quả về cho người dùng
       res.status(200).json({
-        message: "Xóa toàn bộ lịch sử các cuộc hội thoại thành công!",
+        message: MESSAGES.CONVERSATION.CLEAR_ALL,
         data: {
-          deletedCount: result.count, // Trả về số lượng phòng chat đã bị xóa sạch
+          deletedCount: result.count,
         },
       });
     } catch (error) {

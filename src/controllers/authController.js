@@ -1,31 +1,25 @@
-// Controller quant lý đăng nhập và đổi mật khẩu
-
+// Controller quản lý đăng nhập và đổi mật khẩu
 const authService = require("../services/authService");
+const { COOKIE_MAX_AGE } = require("../constants/tokenInfo");
+const { MESSAGES } = require("../constants/messages");
 
 class AuthController {
   //  BKAV HaiHS : xử lý đăng nhập - start
   async login(req, res, next) {
     try {
-      // Lấy dữ liệu từ req
       const { email, password } = req.body;
 
-      // Validate cơ bản (Có thể dùng thư viện Zod sau này)
+      // Validate cơ bản
       if (!email || !password) {
-        // kiểm tra thiếu email hay password ko?
-        return res
-          .status(400)
-          .json({ message: "Vui lòng nhập đầy đủ Email và Mật khẩu" });
+        return res.status(400).json({ message: MESSAGES.AUTH.MISSING_FIELDS });
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // định dạng cho email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         // kiểm tra email đúng định dạng ko?
-        return res
-          .status(400)
-          .json({ message: "Định dạng Email không hợp lệ!" });
+        return res.status(400).json({ message: MESSAGES.AUTH.INVALID_EMAIL });
       }
 
-      // gửi email & password xuống hàm login của authService
       const result = await authService.login(email, password);
 
       // Luu Refresh Token vao HttpOnly Cookie bao mat
@@ -33,19 +27,17 @@ class AuthController {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
+        maxAge: COOKIE_MAX_AGE,
       });
 
-      // Trả Response cho người dùng (chỉ trả token và thông tin user)
       res.status(200).json({
-        message: "Đăng nhập thành công!",
+        message: MESSAGES.AUTH.LOGIN_SUCCESS,
         data: {
           token: result.accessToken,
           user: result.user,
         },
       });
     } catch (error) {
-      // chuyển lỗi đó đến Middleware Error Handler
       next(error);
     }
   }
@@ -62,11 +54,11 @@ class AuthController {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // Gia hạn thêm 7 ngày từ thời điểm hiện tại
+        maxAge: COOKIE_MAX_AGE,
       });
 
       res.status(200).json({
-        message: "Gia hạn phiên đăng nhập thành công!",
+        message: MESSAGES.AUTH.REFRESH_SUCCESS,
         data: {
           token: result.accessToken,
           user: result.user,
@@ -86,7 +78,7 @@ class AuthController {
 
       res.clearCookie("refreshToken");
       res.status(200).json({
-        message: "Đăng xuất tài khoản thành công!",
+        message: MESSAGES.AUTH.LOGOUT_SUCCESS,
       });
     } catch (error) {
       next(error);
@@ -104,13 +96,13 @@ class AuthController {
       //  kiểm tra thiếu mật khẩu cũ hoặc mới ko?
       if (!oldPassword || !newPassword) {
         return res.status(400).json({
-          message: "Vui lòng nhập đầy đủ mật khẩu cũ và mật khẩu mới!",
+          message: MESSAGES.AUTH.PASSWORD_REQUIRED,
         });
       }
       // kiểm tra mật khẩu cũ trùng với mật khẩu mới
       if (oldPassword === newPassword) {
         return res.status(400).json({
-          message: "Mật khẩu mới không được trùng với mật khẩu cũ!",
+          message: MESSAGES.AUTH.PASSWORD_SAME,
         });
       }
 
@@ -119,8 +111,7 @@ class AuthController {
 
       // trả lại response cho người dùng
       res.status(200).json({
-        message:
-          "Đổi mật khẩu thành công! Vui lòng dùng mật khẩu mới cho lần đăng nhập sau.",
+        message: MESSAGES.AUTH.CHANGE_PASSWORD_SUCCESS,
       });
     } catch (error) {
       next(error); // Đẩy lỗi ra file errorHandler

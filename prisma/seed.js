@@ -1,4 +1,4 @@
-// file seed data dữ liệu mẫu nhưng ít hơn
+// file seed data dữ liệu mẫu
 require("dotenv").config();
 
 const { PrismaClient } = require("@prisma/client");
@@ -22,23 +22,23 @@ async function main() {
     "USER_C",
     "USER_R",
     "USER_U",
-    "USER_D", // Quyền quản lý User
+    "USER_D",
     "GROUP_C",
     "GROUP_R",
     "GROUP_U",
-    "GROUP_D", // Quyền quản lý Nhóm
+    "GROUP_D",
     "GROUP_ADD_USER",
-    "GROUP_DELETE_USER", // Quyền điều phối thành viên
-    "CHAT", // Quyền Chat với AI
+    "GROUP_DELETE_USER",
+    "CHAT",
     "CONV_C",
     "CONV_R",
     "CONV_U",
-    "CONV_D", // Quyền quản lý cuộc hội thoại
+    "CONV_D",
   ];
 
   console.log("Bắt đầu luồng gieo hạt dữ liệu hệ thống (Seeding)...");
 
-  // BKAV HaiHS : Tạo hoặc cập nhật NHÓM "Super Admin" - start
+  // BKAV HaiHS : Tạo hoặc cập nhật nhóm "Super Admin" - start
   const adminGroup = await prisma.group.upsert({
     where: { name: "Super Admin" },
     update: { permissions: allPermissions },
@@ -49,9 +49,9 @@ async function main() {
   });
   console.log("Bước 1: Đã chuẩn bị xong nhóm quyền tối cao:", adminGroup.name);
 
-  // BKAV HaiHS : Tạo hoặc cập nhật NHÓM "Super Admin" - end
+  // BKAV HaiHS : Tạo hoặc cập nhật nhóm "Super Admin" - end
 
-  // BKAV HaiHS : Tạo hoặc cập nhật TÀI KHOẢN người dùng Super Admin - start
+  // BKAV HaiHS : Tạo hoặc cập nhật tài khoản người dùng Super Admin - start
   const superAdmin = await prisma.user.upsert({
     where: { email: adminEmail },
     update: {
@@ -71,7 +71,7 @@ async function main() {
       },
     },
   });
-  // BKAV HaiHS : Tạo hoặc cập nhật TÀI KHOẢN người dùng Super Admin - end
+  // BKAV HaiHS : Tạo hoặc cập nhật tài khoản người dùng Super Admin - end
 
   console.log("Bước 2: Khởi tạo tài khoản Super Admin thành công!");
   console.log(`Email: ${superAdmin.email}`);
@@ -88,16 +88,11 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    // Đóng kết nối của Prisma Client
     await prisma.$disconnect();
-
-    // MẸO QUAN TRỌNG: Đóng luôn kết nối Pool của thư viện 'pg'
-    // Thiếu dòng này script chạy xong sẽ bị treo đơ Terminal và bạn phải bấm Ctrl + C để thoát
     await pool.end();
-
     console.log(
       "Đã đóng toàn bộ kết nối Database an toàn. Tiến trình kết thúc.",
     );
   });
 
-// BKAV HaiHS : Luồng chạy và bắt lỗi hệ thống - start
+// BKAV HaiHS : Luồng chạy và bắt lỗi hệ thống - end
