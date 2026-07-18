@@ -29,7 +29,7 @@ class GroupRepository {
   // BKAV HaiHS : Tìm nhóm theo ID - start
   async findById(id) {
     return await prisma.group.findUnique({
-      where: { id: parseInt(id) }, // Ép kiểu về số nguyên vì id trong DB là Int
+      where: { id: parseInt(id) },
     });
   }
   // BKAV HaiHS : Tìm nhóm theo ID - end
@@ -38,7 +38,7 @@ class GroupRepository {
   async update(id, updateData) {
     return await prisma.group.update({
       where: { id: parseInt(id) },
-      data: updateData, // Sẽ nhận vào { name } hoặc { permissions } hoặc cả hai
+      data: updateData,
     });
   }
   // BKAV HaiHS : Cập nhật nhóm - end
@@ -53,10 +53,9 @@ class GroupRepository {
           connect: userIds.map((id) => ({ id: parseInt(id) })),
         },
       },
-      // Yêu cầu trả về kèm theo danh sách thành viên sau khi cập nhật để kiểm tra
       include: {
         users: {
-          select: { id: true, email: true }, // Chỉ lấy id và email, không lấy password bảo mật
+          select: { id: true, email: true },
         },
       },
     });
@@ -77,7 +76,6 @@ class GroupRepository {
       where: { id: parseInt(groupId) },
       data: {
         users: {
-          // Cắt đứt liên kết với mảng ID người dùng truyền lên
           disconnect: userIds.map((id) => ({ id: parseInt(id) })),
         },
       },
@@ -98,18 +96,14 @@ class GroupRepository {
       prisma.group.findMany({
         skip: skip,
         take: take,
-        orderBy: [
-          { name: "asc" },
-          { id: "asc" },
-        ], // Sắp xếp theo bảng chữ cái tên nhóm, sau đó theo ID tăng dần
-        // Thêm phần này để đếm xem nhóm có bao nhiêu thành viên (rất hữu ích cho Frontend)
+        orderBy: [{ name: "asc" }, { id: "asc" }],
         include: {
           _count: {
             select: { users: true },
           },
         },
       }),
-      prisma.group.count(), // Đếm tổng số bản ghi Group trong DB
+      prisma.group.count(),
     ]);
 
     return { groups, total };
@@ -148,10 +142,7 @@ class GroupRepository {
     // Lấy toàn bộ các nhóm khớp để sắp xếp độ liên quan ở RAM
     const allMatchingGroups = await prisma.group.findMany({
       where,
-      orderBy: [
-        { name: "asc" },
-        { id: "asc" },
-      ],
+      orderBy: [{ name: "asc" }, { id: "asc" }],
       include: {
         _count: {
           select: { users: true },
