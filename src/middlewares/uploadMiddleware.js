@@ -1,5 +1,6 @@
-// middlware multer cấu hình tải ảnh
+const { UPLOAD } = require("../constants/uploads");
 
+// middlware multer cấu hình tải ảnh
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -39,7 +40,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn tối đa 5MB / một ảnh
+  limits: { fileSize: UPLOAD.FILE_SIZE }, // Giới hạn tối đa 5MB / một ảnh
 });
 // BKAV HaiHS - middleware upload với cấu hình đã thiết lập - end
 

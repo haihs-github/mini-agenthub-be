@@ -1,7 +1,7 @@
 const rateLimit = require("express-rate-limit");
 const RedisStore = require("rate-limit-redis").default;
 const redisStreamService = require("../services/redisStreamService");
-
+const { RATE } = require("../constants/ratelimits");
 // BKAV HaiHS : Định nghĩa lớp Store động kết hợp giữa RedisStore và MemoryStore dự phòng - start
 class DynamicStore {
   constructor(prefix) {
@@ -12,67 +12,78 @@ class DynamicStore {
   }
 
   init(options) {
-    this.options = options;
-    // KHÔNG khởi tạo và gọi init của RedisStore ở đây để tránh crash khi Redis chưa online lúc khởi động server
+    this.options = options; // KHÔNG khởi tạo và gọi init của RedisStore ở đây để tránh crash khi Redis chưa online lúc khởi động server
+  }
+
+  // Khởi tạo RedisStore bên trong hàm phụ
+  buildRedisStore() {
+    return new RedisStore({
+      sendCommand: (...args) => {
+        const client = redisStreamService.ioredisClient;
+        if (!client) {
+          throw new Error("Redis client is null");
+        }
+        return client.call(...args);
+      },
+      prefix: `rl:${this.prefix}:`,
+    });
+  }
+
+  // Khởi tạo và nạp kịch bản vào RedisStore
+  async initRedisStore() {
+    this.redisStore = this.buildRedisStore();
+    if (typeof this.redisStore.init === "function") {
+      await this.redisStore.init(this.options);
+    }
   }
 
   // Khởi tạo RedisStore trễ (Lazy Initialization) khi có kết nối thực sự
   async ensureRedisStoreInitialized() {
-    if (this.redisStore) return true;
-
-    if (
-      redisStreamService.isRedisConnected &&
-      redisStreamService.ioredisClient
-    ) {
-      try {
-        this.redisStore = new RedisStore({
-          sendCommand: (...args) => {
-            if (redisStreamService.ioredisClient) {
-              return redisStreamService.ioredisClient.call(...args);
-            }
-            throw new Error("Redis client is null");
-          },
-          prefix: `rl:${this.prefix}:`,
-        });
-
-        // Gọi khởi động nạp kịch bản Lua vào Redis
-        if (typeof this.redisStore.init === "function") {
-          await this.redisStore.init(this.options);
-        }
-        return true;
-      } catch (err) {
-        console.warn(
-          `[RateLimit] Failed to initialize RedisStore lazily:`,
-          err.message,
-        );
-        this.redisStore = null; // Reset để thử lại ở request sau
-        return false;
-      }
+    if (this.redisStore) {
+      return true;
     }
-    return false;
+
+    const isConnected =
+      redisStreamService.isRedisConnected && redisStreamService.ioredisClient;
+    if (!isConnected) {
+      return false;
+    }
+
+    try {
+      await this.initRedisStore();
+      return true;
+    } catch (err) {
+      console.warn(
+        `[RateLimit] Failed to initialize RedisStore lazily:`,
+        err.message,
+      );
+      this.redisStore = null; // Reset để thử lại ở request sau
+      return false;
+    }
   }
 
-  async increment(key) {
-    // 1. Thử khởi tạo trễ và ghi nhận lượt gọi thông qua Redis
-    const isRedisReady = await this.ensureRedisStoreInitialized();
-    if (isRedisReady && this.redisStore) {
-      try {
-        return await this.redisStore.increment(key);
-      } catch (err) {
-        console.warn(
-          `[RateLimit Warning] RedisStore error, falling back to MemoryStore:`,
-          err.message,
-        );
-        this.redisStore = null; // Reset để khởi tạo lại khi Redis kết nối lại
-      }
+  // Hàm phụ tăng giá trị trong Redis
+  async incrementRedis(key) {
+    try {
+      return await this.redisStore.increment(key);
+    } catch (err) {
+      console.warn(
+        `[RateLimit Warning] RedisStore error, falling back to MemoryStore:`,
+        err.message,
+      );
+      this.redisStore = null; // Reset để khởi tạo lại khi Redis kết nối lại
+      return null;
     }
+  }
 
-    // 2. Dự phòng: Tự xử lý bằng bộ đệm RAM cục bộ của máy chủ Node.js nếu Redis sập
+  // Hàm phụ tăng giá trị trong Memory cục bộ
+  incrementMemory(key) {
     const now = Date.now();
     const windowMs = this.options.windowMs;
 
     let record = this.localCache.get(key);
-    if (!record || record.resetTime < now) {
+    const isExpired = !record || record.resetTime < now;
+    if (isExpired) {
       record = {
         totalHits: 0,
         resetTime: now + windowMs,
@@ -88,32 +99,71 @@ class DynamicStore {
     };
   }
 
-  async decrement(key) {
+  async increment(key) {
+    // 1. Thử khởi tạo trễ và ghi nhận lượt gọi thông qua Redis
     const isRedisReady = await this.ensureRedisStoreInitialized();
     if (isRedisReady && this.redisStore) {
-      try {
-        if (typeof this.redisStore.decrement === "function") {
-          return await this.redisStore.decrement(key);
-        }
-      } catch (err) {
-        this.redisStore = null;
+      const result = await this.incrementRedis(key);
+      if (result) {
+        return result;
       }
     }
+    // 2. Dự phòng: Tự xử lý bằng bộ đệm RAM cục bộ nếu Redis sập
+    return this.incrementMemory(key);
+  }
 
+  // Hàm phụ giảm giá trị trong Redis
+  async decrementRedis(key) {
+    try {
+      const hasDecrement = typeof this.redisStore.decrement === "function";
+      if (hasDecrement) {
+        await this.redisStore.decrement(key);
+        return true;
+      }
+    } catch (err) {
+      this.redisStore = null;
+    }
+    return false;
+  }
+
+  // Hàm phụ giảm giá trị trong Memory cục bộ
+  decrementMemory(key) {
     let record = this.localCache.get(key);
-    if (record && record.totalHits > 0) {
+    const hasHits = record && record.totalHits > 0;
+    if (hasHits) {
       record.totalHits -= 1;
       this.localCache.set(key, record);
     }
   }
 
+  async decrement(key) {
+    const isRedisReady = await this.ensureRedisStoreInitialized();
+    if (isRedisReady && this.redisStore) {
+      const done = await this.decrementRedis(key);
+      if (done) {
+        return;
+      }
+    }
+    this.decrementMemory(key);
+  }
+
+  // Hàm phụ xóa key trong Redis
+  async resetKeyRedis(key) {
+    try {
+      await this.redisStore.resetKey(key);
+      return true;
+    } catch (err) {
+      this.redisStore = null;
+    }
+    return false;
+  }
+
   async resetKey(key) {
     const isRedisReady = await this.ensureRedisStoreInitialized();
     if (isRedisReady && this.redisStore) {
-      try {
-        return await this.redisStore.resetKey(key);
-      } catch (err) {
-        this.redisStore = null;
+      const done = await this.resetKeyRedis(key);
+      if (done) {
+        return;
       }
     }
     this.localCache.delete(key);
@@ -124,12 +174,12 @@ class DynamicStore {
 // 1. Giới hạn chung cho toàn hệ thống (General API Rate Limiter) - tối đa 60 requests/phút
 const generalLimiter = rateLimit({
   store: new DynamicStore("general"),
-  windowMs: 1 * 60 * 1000,
-  max: 60,
+  windowMs: RATE.LIMIT_TIME,
+  max: RATE.LIMIT_GENERAL,
   message: {
     status: "fail",
     code: "RATE_LIMIT_GENERAL",
-    message: "Bạn đang thao tác quá nhanh. Vui lòng thử lại sau 1 phút!",
+    message: LIMIT_GENERAL_MESSAGE,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -139,12 +189,12 @@ const generalLimiter = rateLimit({
 // 2. Giới hạn Đăng nhập & Đổi mật khẩu (Auth Rate Limiter) - tối đa 5 requests/phút
 const authLimiter = rateLimit({
   store: new DynamicStore("auth"),
-  windowMs: 1 * 60 * 1000,
-  max: 5,
+  windowMs: RATE.LIMIT_TIME,
+  max: RATE.LIMIT_REQUEST_AUTH,
   message: {
     status: "fail",
     code: "RATE_LIMIT_AUTH",
-    message: "Quá nhiều yêu cầu xác thực. Vui lòng thử lại sau 1 phút!",
+    message: RATE.LIMIT_AUTH_MESSAGE,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -154,12 +204,12 @@ const authLimiter = rateLimit({
 // 3. Giới hạn gia hạn Token (Token Refresh Rate Limiter) - tối đa 20 requests/phút
 const refreshLimiter = rateLimit({
   store: new DynamicStore("refresh"),
-  windowMs: 1 * 60 * 1000,
-  max: 20,
+  windowMs: RATE.LIMIT_TIME,
+  max: RATE.LIMIT_REFRESH,
   message: {
     status: "fail",
     code: "RATE_LIMIT_REFRESH",
-    message: "Yêu cầu gia hạn quá nhanh. Vui lòng thử lại sau!",
+    message: RATE.LIMIT_REFRESH_MESSAGE,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -169,13 +219,12 @@ const refreshLimiter = rateLimit({
 // 4. Giới hạn chat với AI (AI Chat Rate Limiter) - tối đa 10 requests/phút
 const chatLimiter = rateLimit({
   store: new DynamicStore("chat"),
-  windowMs: 1 * 60 * 1000,
-  max: 10,
+  windowMs: RATE.LIMIT_TIME,
+  max: RATE.LIMIT_CHAT,
   message: {
     status: "fail",
     code: "RATE_LIMIT_CHAT",
-    message:
-      "Bạn đã vượt giới hạn chat 10 tin nhắn/phút. Vui lòng đợi và thử lại!",
+    message: RATE.LIMIT_CHAT_MESSAGE,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -186,12 +235,12 @@ const chatLimiter = rateLimit({
 // 5. Giới hạn tìm kiếm / phân trang nặng (Heavy Query Rate Limiter) - tối đa 30 requests/phút
 const heavyQueryLimiter = rateLimit({
   store: new DynamicStore("heavy"),
-  windowMs: 1 * 60 * 1000,
-  max: 30,
+  windowMs: RATE.LIMIT_TIME,
+  max: RATE.LIMIT_HEAVY,
   message: {
     status: "fail",
     code: "RATE_LIMIT_HEAVY",
-    message: "Hệ thống đang bận xử lý truy vấn của bạn. Vui lòng thử lại sau!",
+    message: RATE.LIMIT_HEAVY_MESSAGE,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -202,13 +251,12 @@ const heavyQueryLimiter = rateLimit({
 // 6. Giới hạn ghi dữ liệu (Write DB Rate Limiter) - tối đa 20 requests/phút
 const writeDbLimiter = rateLimit({
   store: new DynamicStore("write"),
-  windowMs: 1 * 60 * 1000,
-  max: 20,
+  windowMs: RATE.LIMIT_TIME,
+  max: RATE.LIMIT_WRITE,
   message: {
     status: "fail",
     code: "RATE_LIMIT_WRITE",
-    message:
-      "Bạn đang thực hiện quá nhiều thao tác thay đổi dữ liệu. Vui lòng đợi!",
+    message: RATE.LIMIT_WRITE_MESSAGE,
   },
   standardHeaders: true,
   legacyHeaders: false,

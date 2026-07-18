@@ -10,7 +10,6 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // Lỗi Hệ thống ẩn danh (Lỗi 500, lỗi sập DB, crash luồng, lỗi cú pháp thư viện bên thứ 3)
-  // Log toàn bộ Stack Trace chi tiết ra Console
   console.error("LỖI HỆ THỐNG NGHIÊM TRỌNG (500):", err);
 
   // giảú lỗi với người dùng

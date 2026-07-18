@@ -1,0 +1,22 @@
+module.exports = {
+  LIMIT_TIME: 1 * 60 * 1000,
+  LIMIT_GENERAL: 60,
+  LIMIT_GENERAL_MESSAGE:
+    "Bạn đang thao tác quá nhanh. Vui lòng thử lại sau 1 phút!",
+  LIMIT_AUTH: 5,
+  LIMIT_AUTH_MESSAGE:
+    "Quá nhiều yêu cầu xác thực. Vui lòng thử lại sau 1 phút!",
+  LIMIT_REFRESH: 20,
+  LIMIT_REFRESH_MESSAGE: "Yêu cầu gia hạn quá nhanh. Vui lòng thử lại sau!",
+  LIMIT_CHAT: 10,
+  LIMIT_CHAT_MESSAGE:
+    "Bạn đã vượt giới hạn chat 10 tin nhắn/phút. Vui lòng đợi và thử lại!",
+  LIMIT_HEAVY: 30,
+  LIMIT_HEAVY_MESSAGE:
+    "Hệ thống đang bận xử lý truy vấn của bạn. Vui lòng thử lại sau!",
+  LIMIT_WRITE: 20,
+  LIMIT_WRITE_MESSAGE:
+    "Bạn đang thực hiện quá nhiều thao tác thay đổi dữ liệu. Vui lòng đợi!",
+};
+
+RATE.LIMIT_HEAVY_MESSAGE;

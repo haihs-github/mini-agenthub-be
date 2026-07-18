@@ -11,6 +11,8 @@ module.exports = {
     PASSWORD_SAME: "Mật khẩu mới không được trùng với mật khẩu cũ!",
     CHANGE_PASSWORD_SUCCESS:
       "Đổi mật khẩu thành công! Vui lòng dùng mật khẩu mới cho lần đăng nhập sau.",
+    LOGIN_REQUIRED: "Bạn cần đăng nhập để thực hiện hành động này!",
+    INVALID_TOKEN: "Thẻ bài (Token) đã hết hạn hoặc không hợp lệ!",
   },
   CONVERSATION: {
     INVALID_ID: "ID cuộc hội thoại phải là một số nguyên hợp lệ!",
@@ -65,6 +67,12 @@ module.exports = {
     DELETE_MY_ACCOUNT:
       "Xóa tài khoản cá nhân của bạn thành công! Toàn bộ lịch sử và dữ liệu liên quan đã được hủy bỏ hoàn toàn.",
   },
+  PERMISSION: {
+    UNAUTHORIZED: "Không tìm thấy thông tin xác thực. Vui lòng đăng nhập!",
+    NOT_FOUND: "Tài khoản của bạn không còn tồn tại trên hệ thống!",
+    FORBIDDEN: (requiredPermission) =>
+      `Bạn không có quyền thực hiện hành động này! (Yêu cầu quyền: ${requiredPermission})`,
+  },
 };
 
-MESSAGES.USER.
+MESSAGES.PERMISSION.NOT_FOUND;
