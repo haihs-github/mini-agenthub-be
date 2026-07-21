@@ -3,9 +3,10 @@ const fs = require("fs");
 const { ProxyAgent, setGlobalDispatcher } = require("undici");
 const { Readable } = require("stream");
 
-// 1. Nạp các thực thể Message chuẩn hóa và cấu hình Model từ LangChain
 const { HumanMessage, AIMessage } = require("@langchain/core/messages");
 const { ChatGroq } = require("@langchain/groq");
+const { AISERVICE } = require("../constants/AiServiceConst");
+const { createGroqModel } = require("../constants/AiModel");
 
 // BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - start
 if (process.env.HTTP_PROXY) {
@@ -14,22 +15,27 @@ if (process.env.HTTP_PROXY) {
 }
 // BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - end
 
-// BKAV HaiHS : Các hàm ước lượng số lượng token cho prompt và completion - start
-function getMessageTextLength(msg) {
-  //
-  if (!msg) return 0;
-  if (typeof msg.content === "string") {
-    return msg.content.length;
-  }
-  if (Array.isArray(msg.content)) {
-    return msg.content
-      .filter((item) => item.type === "text" && item.text)
-      .map((item) => item.text.length)
-      .reduce((sum, len) => sum + len, 0);
-  }
+// BKAV HaiHS : Hàm helper đếm ký tự từng ảnh hoặc text trong message - start
+function getItemLength(item) {
+  if (item?.type === "text") return item.text?.length || 0;
+  if (item?.type === "image" || item?.type === "image_url")
+    return AISERVICE.IMAGE_CHAR_EQUIVALENT; // cố  định số token cho ảnh
   return 0;
 }
+// BKAV HaiHS : Hàm helper đếm ký tự từng ảnh hoặc text trong message - end
 
+// BKAV HaiHS : Hàm tính ký tự cho message - start
+function getMessageTextLength(msg) {
+  const content = msg?.content;
+  if (!content) return 0;
+  if (typeof content === "string") return content.length;
+  if (!Array.isArray(content)) return 0;
+
+  return content.reduce((total, item) => total + getItemLength(item), 0);
+}
+// BKAV HaiHS : Hàm tính ký tự cho message - end
+
+// BKAV HaiHS : hàm ước lượng promt token - start
 function estimatePromptTokens(prompt, historyMessages) {
   let contextTextLength = 0;
   if (historyMessages && Array.isArray(historyMessages)) {
@@ -41,181 +47,166 @@ function estimatePromptTokens(prompt, historyMessages) {
   // Ước tính: ~3.5 ký tự mỗi token và cộng thêm ~35 token boilerplate cho prompt hệ thống / mẫu chat
   return Math.round(totalLength / 3.5) + 35;
 }
+// BKAV HaiHS : hàm ước lượng promt token - end
 
+// BKAV HaiHS : hàm ước tính số lượng token trả lời - start
 function estimateCompletionTokens(content) {
   if (!content) return 0;
-  return Math.round(content.length / 4);
+  return Math.round(content.length / 4); // lấy ký tự câu trả lời chia cho 4
 }
-// BKAV HaiHS : Các hàm ước lượng số lượng token cho prompt và completion - end
+// BKAV HaiHS : hàm ước tính số lượng token trả lời - end
 
-class AiService {
-  // BKAV HaiHS : Dieu huong luong stream AI theo tung loai model - start
-  async generateStreamResponse(modelName, prompt, historyMessages, signal) {
-    if (modelName === "flowise" || !modelName) {
-      return await this.getFlowiseStream(prompt, historyMessages, signal);
-    }
+// BKAV HaiHS: Hàm Đọc file và chuyển về Base64 - start
+function convertLocalFileToBase64(filePath, fileType) {
+  const fileBuffer = fs.readFileSync(filePath);
+  return `data:${fileType};base64,${fileBuffer.toString("base64")}`;
+}
+// BKAV HaiHS: Hàm Đọc file và chuyển về Base64 - end
 
-    return await this.getLangChainStream(
-      modelName,
-      prompt,
-      historyMessages,
-      signal,
-    );
-  }
-  // BKAV HaiHS : Dieu huong luong stream AI theo tung loai model - end
+// BKAV HaiHS : gộp tin nhắn và danh sách đính kém theo chuẩn langchain - start
+function buildMessageContent(text, attachments = []) {
+  if (!attachments.length) return text;
 
-  // BKAV HaiHS : lấy luồng steam từ langchain - start
-  async getLangChainStream(modelName, prompt, historyMessages, signal) {
-    // Khởi tạo các model LangChain với các tham số cần thiết
-    const chatModel = new ChatGroq({
-      apiKey: process.env.GROQ_API_KEY,
-      model: modelName,
-      temperature: 0.5,
-    });
+  const images = attachments.map((att) => ({
+    type: "image_url",
+    image_url: { url: convertLocalFileToBase64(att.filePath, att.fileType) },
+  }));
 
-    const convertLocalFileToBase64 = (filePath, fileType) => {
-      const fileBuffer = fs.readFileSync(filePath);
-      return `data:${fileType};base64,${fileBuffer.toString("base64")}`;
-    };
+  return [{ type: "text", text }, ...images];
+}
+// BKAV HaiHS : gộp tin nhắn và danh sách đính kém theo chuẩn langchain - end
 
-    // chuẩn hóa lịch sử chat sang định dạng message của langchain
-    const formattedMessages = historyMessages.map((msg) => {
-      // trường role để biết tin nhắn của user hay ai
-      const isUser = msg.role === "user";
+// BKAV HaiHS : Hàm chuyển tin nhắn thành obj HumanMessage hoặc AIMessage của LangChain - start
+function formatSingleMessage(msg) {
+  const content = buildMessageContent(msg.content, msg.attachments);
+  return msg.role === "user"
+    ? new HumanMessage({ content })
+    : new AIMessage({ content });
+}
+// BKAV HaiHS : Hàm chuyển tin nhắn thành obj HumanMessage hoặc AIMessage của LangChain - end
 
-      // Nếu tin nhắn có ảnh đính kèm, chuyển đổi sang định dạng { type: "image_url", image_url: { url: "..." } }
-      if (msg.attachments && msg.attachments.length > 0) {
-        const contentArray = [{ type: "text", text: msg.content }];
-        msg.attachments.forEach((att) => {
-          contentArray.push({
-            type: "image_url",
-            image_url: {
-              url: convertLocalFileToBase64(att.filePath, att.fileType),
-            },
-          });
-        });
-        // Trả về HumanMessage hoặc AIMessage
-        return isUser
-          ? new HumanMessage({ content: contentArray })
-          : new AIMessage({ content: contentArray });
+// BKAV HaiHS : Hàm cố định số ảnh có thể gửi theo promt - start
+function limitHistoryImages(
+  messages,
+  maxImages = AISERVICE.MAX_ALLOWED_IMAGES,
+) {
+  let imageCount = 0;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!Array.isArray(msg.content)) continue;
+
+    msg.content = msg.content.filter((item) => {
+      if (item.type !== "image_url") return true;
+      if (imageCount < maxImages) {
+        imageCount++;
+        return true;
       }
-      // trả về HumanMessage hoặc AIMessage
-      return isUser
-        ? new HumanMessage(msg.content)
-        : new AIMessage(msg.content);
+      return false;
     });
+  }
+}
+// BKAV HaiHS : Hàm cố định số ảnh có thể gửi theo promt - end
 
-    // xử lý câu hỏi hiện tại và ngữ cảnh
-    const currentMessage = historyMessages[historyMessages.length - 1]; // Lấy tin nhắn cuối cùng trong lịch sử để làm ngữ cảnh
-    let currentContent;
+// BKAV HaiHS : Hàm lấy token usage từ chunk cuối - start
+function extractUsageFromChunk(chunk) {
+  const u = chunk.response_metadata?.usage || chunk.usage_metadata;
+  if (!u) return null;
 
-    //  lấy ảnh đính kèm làm ngữ cảnh
-    if (
-      currentMessage &&
-      currentMessage.attachments &&
-      currentMessage.attachments.length > 0
-    ) {
-      currentContent = [{ type: "text", text: prompt }];
-      currentMessage.attachments.forEach((att) => {
-        currentContent.push({
-          type: "image_url",
-          image_url: {
-            url: convertLocalFileToBase64(att.filePath, att.fileType),
-          },
-        });
-      });
-    } else {
-      currentContent = prompt;
+  return {
+    prompt_tokens: u.prompt_tokens || u.input_tokens || 0,
+    completion_tokens: u.completion_tokens || u.output_tokens || 0,
+    total_tokens: u.total_tokens || 0,
+  };
+}
+// BKAV HaiHS : Hàm lấy token usage từ chunk cuối - end
+
+// BKAV HaiHS : Hàm helper xử lý chuỗi trả về từ Flowise SSE - start
+function parseFlowiseTokenLine(line) {
+  const cleanedLine = line.trim();
+  if (!cleanedLine) return null;
+
+  const jsonStr = cleanedLine.startsWith("data:")
+    ? cleanedLine.replace(/^data:\s*/, "")
+    : cleanedLine;
+
+  try {
+    const parsed = JSON.parse(jsonStr);
+    return parsed.event === "token" ? parsed.data || "" : null;
+  } catch {
+    return null;
+  }
+}
+// BKAV HaiHS : Hàm helper xử lý chuỗi trả về từ Flowise SSE - end
+
+// BKAV HaiHS : Class chính chứa các phương thức quản lý giao tiếp với AI provider
+class AiService {
+  // 1. điều hướng xử lý dựa vào model name
+  async generateStreamResponse(modelName, prompt, historyMessages, signal) {
+    if (!modelName || modelName === "flowise") {
+      return this.getFlowiseStream(prompt, historyMessages, signal);
     }
+    return this.getLangChainStream(modelName, prompt, historyMessages, signal);
+  }
 
-    // thêm câu hỏi hiện tại vào cuối mảng formattedMessages để gửi cho model
+  // 2. gọi model qua langchain
+  async getLangChainStream(modelName, prompt, historyMessages, signal) {
+    const chatModel = createGroqModel(modelName);
+
+    // Chuẩn hóa danh sách messages
+    const formattedMessages = historyMessages.map(formatSingleMessage);
+
+    // Thêm prompt hiện tại kèm ảnh đính kèm (nếu có ở tin nhắn cuối)
+    const currentMsg = historyMessages[historyMessages.length - 1];
+    const currentContent = buildMessageContent(prompt, currentMsg?.attachments);
     formattedMessages.push(new HumanMessage({ content: currentContent }));
 
-    // lấy tối đa 5 ảnh đính kèm gần nhất trong lịch sử
-    const maxAllowedImages = 5;
-    let totalDetectedImages = 0;
-    for (let i = formattedMessages.length - 1; i >= 0; i--) {
-      if (Array.isArray(formattedMessages[i].content)) {
-        const optimizedContent = [];
-        for (let j = formattedMessages[i].content.length - 1; j >= 0; j--) {
-          const contentItem = formattedMessages[i].content[j];
-          if (contentItem.type === "image_url") {
-            if (totalDetectedImages < maxAllowedImages) {
-              totalDetectedImages++;
-              optimizedContent.unshift(contentItem);
-            }
-          } else {
-            optimizedContent.unshift(contentItem);
-          }
-        }
-        formattedMessages[i].content = optimizedContent;
-      }
-    }
+    // Giới hạn 5 ảnh
+    limitHistoryImages(formattedMessages);
 
-    // Kích hoạt luồng stream từ langchains, signal để hủy nếu client ngắt kết nối
     const langchainStream = await chatModel.stream(formattedMessages, {
       signal,
     });
 
-    // Biến đổi thành chuỗi văn bản SSE (String) thay vì để nguyên Object
-    async function* transformLangChainStream() {
-      let usage = null;
-      let fullContent = "";
+    return Readable.from(
+      this.transformLangChainStream(langchainStream, prompt, historyMessages),
+    );
+  }
 
-      for await (const chunk of langchainStream) {
-        // Thu thập metadata về token usage nếu có trong chunk
-        if (chunk.response_metadata?.usage) {
-          const u = chunk.response_metadata.usage;
-          usage = {
-            prompt_tokens: u.prompt_tokens || u.input_tokens || 0,
-            completion_tokens: u.completion_tokens || u.output_tokens || 0,
-            total_tokens: u.total_tokens || 0,
-          };
-        } else if (chunk.usage_metadata) {
-          const u = chunk.usage_metadata;
-          usage = {
-            prompt_tokens: u.input_tokens || 0,
-            completion_tokens: u.output_tokens || 0,
-            total_tokens: u.total_tokens || 0,
-          };
-        }
+  // 3. Biến đổi các chunk dữ liệu thô từ LangChain thành định dạng chuỗi chuẩn SSE
+  async *transformLangChainStream(stream, prompt, historyMessages) {
+    let usage = null;
+    let fullContent = "";
 
-        const content = chunk.content || "";
-        fullContent += content;
+    for await (const chunk of stream) {
+      const extractedUsage = extractUsageFromChunk(chunk);
+      if (extractedUsage) usage = extractedUsage;
 
-        // Điều chỉnh đầu ra theo chuẩn LangChain { content } - start
-        const payload = {
-          content: content,
-        };
-        yield `data: ${JSON.stringify(payload)}\n\n`;
-      }
+      const content = chunk.content || "";
+      fullContent += content;
 
-      // Dự phòng nếu không lấy được token từ API
-      if (!usage || !usage.prompt_tokens) {
-        const promptTokens = estimatePromptTokens(prompt, historyMessages);
-        const completionTokens = estimateCompletionTokens(fullContent);
-        usage = {
-          prompt_tokens: promptTokens,
-          completion_tokens: completionTokens,
-          total_tokens: promptTokens + completionTokens,
-        };
-      }
-
-      yield `data: [DONE] ${JSON.stringify({ usage })}\n\n`; // Chuỗi báo hiệu kết thúc luồng chuẩn quốc tế kèm token usage
+      yield `data: ${JSON.stringify({ content })}\n\n`;
     }
 
-    return Readable.from(transformLangChainStream());
-  }
-  // BKAV HaiHS : lấy luồng steam từ langchain - end
+    // Bóc tách usage token (nếu có) bằng extractUsageFromChunk.
+    if (!usage?.prompt_tokens) {
+      const promptTokens = estimatePromptTokens(prompt, historyMessages);
+      const completionTokens = estimateCompletionTokens(fullContent);
+      usage = {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: promptTokens + completionTokens,
+      };
+    }
 
-  // BKAV HaiHS : lấy luồng stream từ Flowise - start
+    yield `data: [DONE] ${JSON.stringify({ usage })}\n\n`;
+  }
+
+  // 3. 2. gọi model qua flowise
   async getFlowiseStream(prompt, historyMessages, signal) {
     const response = await axios.post(
       process.env.FLOWISE_API_URL,
-      {
-        question: prompt,
-        streaming: true,
-      },
+      { question: prompt, streaming: true },
       {
         responseType: "stream",
         headers: {
@@ -228,59 +219,41 @@ class AiService {
       },
     );
 
-    // Biến đổi thành chuỗi văn bản SSE (String) cho Flowise
-    async function* transformFlowiseStream() {
-      let buffer = "";
-      let fullContent = "";
+    return Readable.from(
+      this.transformFlowiseStream(response.data, prompt, historyMessages),
+    );
+  }
 
-      for await (const chunk of response.data) {
-        buffer += chunk.toString();
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
+  // Đọc dữ liệu stream từ Flowise, cắt dòng và chuyển đổi sang chuẩn SSE thống nhất với LangChain.
+  async *transformFlowiseStream(streamData, prompt, historyMessages) {
+    let buffer = "";
+    let fullContent = "";
 
-        for (const line of lines) {
-          const cleanedLine = line.trim();
-          if (!cleanedLine) continue;
+    for await (const chunk of streamData) {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
 
-          let jsonStr = cleanedLine;
-          if (jsonStr.startsWith("data:")) {
-            jsonStr = jsonStr.replace(/^data:\s*/, "");
-          }
+      for (const line of lines) {
+        const text = parseFlowiseTokenLine(line);
+        if (!text) continue;
 
-          try {
-            const parsed = JSON.parse(jsonStr);
-
-            if (parsed.event === "token") {
-              const text = parsed.data || "";
-              fullContent += text;
-              // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - start
-              const payload = {
-                content: text,
-              };
-              // BKAV HaiHS : Điều chỉnh đầu ra Flowise theo chuẩn LangChain { content } - end
-              yield `data: ${JSON.stringify(payload)}\n\n`;
-            }
-          } catch (e) {
-            // Bỏ qua lỗi cú pháp dòng dở dang
-          }
-        }
+        fullContent += text;
+        yield `data: ${JSON.stringify({ content: text })}\n\n`;
       }
-
-      // Ước tính token sử dụng cho Flowise
-      const promptTokens = estimatePromptTokens(prompt, historyMessages);
-      const completionTokens = estimateCompletionTokens(fullContent);
-      const usage = {
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-        total_tokens: promptTokens + completionTokens,
-      };
-
-      yield `data: [DONE] ${JSON.stringify({ usage })}\n\n`;
     }
 
-    return Readable.from(transformFlowiseStream());
+    const promptTokens = estimatePromptTokens(prompt, historyMessages);
+    const completionTokens = estimateCompletionTokens(fullContent);
+    const usage = {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    };
+
+    yield `data: [DONE] ${JSON.stringify({ usage })}\n\n`;
   }
-  // BKAV HaiHS : lấy luồng stream từ Flowise - end
 }
+// BKAV HaiHS : Class chính chứa các phương thức quản lý giao tiếp với AI provider - end
 
 module.exports = new AiService();

@@ -1,6 +1,4 @@
-const { CONVERSATION } = require("./errorCodes");
-
-module.exports = {
+const MESSAGES = {
   AUTH: {
     MISSING_FIELDS: "Vui lòng nhập đầy đủ Email và Mật khẩu",
     INVALID_EMAIL: "Định dạng Email không hợp lệ!",
@@ -75,4 +73,4 @@ module.exports = {
   },
 };
 
-MESSAGES.PERMISSION.NOT_FOUND;
+module.exports = { MESSAGES };

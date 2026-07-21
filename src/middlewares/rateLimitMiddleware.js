@@ -1,7 +1,7 @@
 const rateLimit = require("express-rate-limit");
 const RedisStore = require("rate-limit-redis").default;
 const redisStreamService = require("../services/redisStreamService");
-const { RATE } = require("../constants/ratelimits");
+const RATE = require("../constants/ratelimits");
 // BKAV HaiHS : Định nghĩa lớp Store động kết hợp giữa RedisStore và MemoryStore dự phòng - start
 class DynamicStore {
   constructor(prefix) {
@@ -179,7 +179,7 @@ const generalLimiter = rateLimit({
   message: {
     status: "fail",
     code: "RATE_LIMIT_GENERAL",
-    message: LIMIT_GENERAL_MESSAGE,
+    message: RATE.LIMIT_GENERAL_MESSAGE,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -190,7 +190,7 @@ const generalLimiter = rateLimit({
 const authLimiter = rateLimit({
   store: new DynamicStore("auth"),
   windowMs: RATE.LIMIT_TIME,
-  max: RATE.LIMIT_REQUEST_AUTH,
+  max: RATE.LIMIT_AUTH,
   message: {
     status: "fail",
     code: "RATE_LIMIT_AUTH",

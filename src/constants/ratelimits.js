@@ -18,5 +18,3 @@ module.exports = {
   LIMIT_WRITE_MESSAGE:
     "Bạn đang thực hiện quá nhiều thao tác thay đổi dữ liệu. Vui lòng đợi!",
 };
-
-RATE.LIMIT_HEAVY_MESSAGE;
