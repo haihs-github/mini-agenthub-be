@@ -6,7 +6,7 @@ const { Readable } = require("stream");
 const { HumanMessage, AIMessage } = require("@langchain/core/messages");
 const { ChatGroq } = require("@langchain/groq");
 const { AISERVICE } = require("../constants/AiServiceConst");
-const { createGroqModel } = require("../constants/AiModel");
+const { GROQ_CONFIG } = require("../constants/AiModel");
 
 // BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - start
 if (process.env.HTTP_PROXY) {
@@ -151,7 +151,10 @@ class AiService {
 
   // 2. gọi model qua langchain
   async getLangChainStream(modelName, prompt, historyMessages, signal) {
-    const chatModel = createGroqModel(modelName);
+    const chatModel = new ChatGroq({
+      model: modelName,
+      ...GROQ_CONFIG,
+    });
 
     // Chuẩn hóa danh sách messages
     const formattedMessages = historyMessages.map(formatSingleMessage);
