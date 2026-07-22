@@ -3,26 +3,28 @@
 const groupService = require("../services/groupService");
 const { MESSAGES } = require("../constants/messages");
 
+// BKAV HaiHS : Định nghĩa lớp GroupController quản lý và điều hành các nhóm quyền - start
 class GroupController {
   // BKAV HaiHS : Xử lý tạo nhóm mới - start
   async createGroup(req, res, next) {
     try {
       const name = req.body.name?.trim();
       const { permissions } = req.body;
-      let userIds = req.body.userIds;
+      const rawUserIds = req.body.userIds;
 
       if (!name) {
         return res.status(400).json({ message: MESSAGES.GROUP.EMPTY_NAME });
       }
 
-      // kiểm tra xem userIds có phải là mảng không, nếu có thì ép kiểu về số nguyên Int
-      if (userIds) {
-        if (!Array.isArray(userIds)) {
+      let userIds = [];
+      if (rawUserIds) {
+        const parsed = this.#parseUserIds(rawUserIds);
+        if (parsed === null) {
           return res.status(400).json({
             message: MESSAGES.GROUP.INVALID_ARRAY,
           });
         }
-        userIds = userIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
+        userIds = parsed;
       }
 
       const result = await groupService.createGroup(name, permissions, userIds);
@@ -40,12 +42,11 @@ class GroupController {
   // BKAV HaiHS : xử lý cập nhật cho nhóm - start
   async updateGroup(req, res, next) {
     try {
-      // Lấy dữ liệu từ req và chuẩn hóa
       const groupId = parseInt(req.params.id);
       const name = req.body.name?.trim();
       const { permissions } = req.body;
 
-      if (isNaN(groupId)) {
+      if (!this.#validateGroupId(groupId)) {
         return res.status(400).json({ message: MESSAGES.GROUP.INVALID_ID });
       }
 
@@ -65,18 +66,18 @@ class GroupController {
   async addUsers(req, res, next) {
     try {
       const groupId = parseInt(req.params.id);
-      let userIds = req.body.userIds;
+      const rawUserIds = req.body.userIds;
 
-      if (isNaN(groupId)) {
+      if (!this.#validateGroupId(groupId)) {
         return res.status(400).json({ message: MESSAGES.GROUP.INVALID_ID });
       }
-      if (!userIds || !Array.isArray(userIds)) {
+
+      const userIds = this.#parseUserIds(rawUserIds);
+      if (userIds === null) {
         return res.status(400).json({
           message: MESSAGES.GROUP.INVALID_ARRAY,
         });
       }
-
-      userIds = userIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
 
       const result = await groupService.addUsersToGroup(groupId, userIds);
 
@@ -95,9 +96,10 @@ class GroupController {
     try {
       const groupId = parseInt(req.params.id);
 
-      if (isNaN(groupId)) {
+      if (!this.#validateGroupId(groupId)) {
         return res.status(400).json({ message: MESSAGES.GROUP.INVALID_ID });
       }
+
       await groupService.deleteGroup(groupId);
 
       res.status(200).json({
@@ -113,19 +115,18 @@ class GroupController {
   async removeUsers(req, res, next) {
     try {
       const groupId = parseInt(req.params.id);
-      let userIds = req.body.userIds;
+      const rawUserIds = req.body.userIds;
 
-      if (isNaN(groupId)) {
+      if (!this.#validateGroupId(groupId)) {
         return res.status(400).json({ message: MESSAGES.GROUP.INVALID_ID });
       }
 
-      if (!userIds || !Array.isArray(userIds)) {
+      const userIds = this.#parseUserIds(rawUserIds);
+      if (userIds === null) {
         return res.status(400).json({
           message: MESSAGES.GROUP.INVALID_ARRAY,
         });
       }
-
-      userIds = userIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
 
       const result = await groupService.removeUsersFromGroup(groupId, userIds);
 
@@ -137,18 +138,14 @@ class GroupController {
       next(error);
     }
   }
-  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - Tuyệt đối sạch rác
+  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - end
 
   // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - start
   async getAllGroups(req, res, next) {
     try {
-      let { page, limit } = req.query;
-      page = parseInt(page) || 1;
-      limit = parseInt(limit) || 10;
+      const { page: rawPage, limit: rawLimit } = req.query;
 
-      if (page < 1) page = 1;
-      if (limit < 1) limit = 10;
-      if (limit > 100) limit = 100;
+      const { page, limit } = this.#parsePagination(rawPage, rawLimit, 10);
 
       const result = await groupService.getAllGroups(page, limit);
 
@@ -168,9 +165,10 @@ class GroupController {
     try {
       const groupId = parseInt(req.params.id);
 
-      if (isNaN(groupId)) {
+      if (!this.#validateGroupId(groupId)) {
         return res.status(400).json({ message: MESSAGES.GROUP.INVALID_ID });
       }
+
       const result = await groupService.getGroupDetail(groupId);
 
       res.status(200).json({
@@ -187,10 +185,9 @@ class GroupController {
   async searchGroups(req, res, next) {
     try {
       const keyword = req.query.keyword?.trim() || "";
-      let { page, limit } = req.query;
+      const { page: rawPage, limit: rawLimit } = req.query;
 
-      page = parseInt(page) || 1;
-      limit = parseInt(limit) || 10;
+      const { page, limit } = this.#parsePagination(rawPage, rawLimit, 10);
 
       const result = await groupService.searchGroups(keyword, page, limit);
 
@@ -204,6 +201,35 @@ class GroupController {
     }
   }
   // BKAV HaiHS : xử lý tìm kiếm nhóm - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của Group ID - start
+  #validateGroupId(groupId) {
+    return !isNaN(groupId);
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của Group ID - end
+
+  // BKAV HaiHS : Hàm phụ chuẩn hóa và ép kiểu danh sách userIds - start
+  #parseUserIds(userIds) {
+    if (!userIds || !Array.isArray(userIds)) {
+      return null;
+    }
+    return userIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
+  }
+  // BKAV HaiHS : Hàm phụ chuẩn hóa và ép kiểu danh sách userIds - end
+
+  // BKAV HaiHS : Hàm phụ chuẩn hóa và ép kiểu phân trang nhóm - start
+  #parsePagination(page, limit, defaultLimit) {
+    let parsedPage = parseInt(page) || 1;
+    let parsedLimit = parseInt(limit) || defaultLimit;
+
+    if (parsedPage < 1) parsedPage = 1;
+    if (parsedLimit < 1) parsedLimit = defaultLimit;
+    if (parsedLimit > 100) parsedLimit = 100;
+
+    return { page: parsedPage, limit: parsedLimit };
+  }
+  // BKAV HaiHS : Hàm phụ chuẩn hóa và ép kiểu phân trang nhóm - end
 }
+// BKAV HaiHS : Định nghĩa lớp GroupController quản lý và điều hành các nhóm quyền - end
 
 module.exports = new GroupController();

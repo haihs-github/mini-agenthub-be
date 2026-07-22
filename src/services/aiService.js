@@ -1,3 +1,4 @@
+// fix me : nhét helper vào trong class đi
 const axios = require("axios");
 const fs = require("fs");
 const { ProxyAgent, setGlobalDispatcher } = require("undici");

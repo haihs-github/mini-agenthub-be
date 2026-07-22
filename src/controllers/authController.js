@@ -3,32 +3,26 @@ const authService = require("../services/authService");
 const { COOKIE_MAX_AGE } = require("../constants/tokenInfo");
 const { MESSAGES } = require("../constants/messages");
 
+// BKAV HaiHS : Định nghĩa lớp AuthController quản lý xác thực và mật khẩu - start
 class AuthController {
-  //  BKAV HaiHS : xử lý đăng nhập - start
+  
+  // ==========================================
+  // PUBLIC METHODS (Viết lên phía trên)
+  // ==========================================
+
+  // BKAV HaiHS : xử lý đăng nhập - start
   async login(req, res, next) {
     try {
       const { email, password } = req.body;
 
-      // Validate cơ bản
-      if (!email || !password) {
-        return res.status(400).json({ message: MESSAGES.AUTH.MISSING_FIELDS });
-      }
-
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        // kiểm tra email đúng định dạng ko?
-        return res.status(400).json({ message: MESSAGES.AUTH.INVALID_EMAIL });
+      const validation = this.#validateLoginPayload(email, password);
+      if (!validation.valid) {
+        return res.status(400).json({ message: validation.message });
       }
 
       const result = await authService.login(email, password);
 
-      // Luu Refresh Token vao HttpOnly Cookie bao mat
-      res.cookie("refreshToken", result.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: COOKIE_MAX_AGE,
-      });
+      this.#setRefreshTokenCookie(res, result.refreshToken);
 
       res.status(200).json({
         message: MESSAGES.AUTH.LOGIN_SUCCESS,
@@ -41,7 +35,7 @@ class AuthController {
       next(error);
     }
   }
-  //  BKAV HaiHS : xử lý đăng nhập - end
+  // BKAV HaiHS : xử lý đăng nhập - end
 
   // BKAV HaiHS : xử lý làm mới token (Refresh Token) - start
   async refresh(req, res, next) {
@@ -49,13 +43,7 @@ class AuthController {
       const refreshToken = req.cookies.refreshToken;
       const result = await authService.refresh(refreshToken);
 
-      // Cập nhật Refresh Token mới vào Cookie HttpOnly để thực hiện Rolling Session
-      res.cookie("refreshToken", result.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: COOKIE_MAX_AGE,
-      });
+      this.#setRefreshTokenCookie(res, result.refreshToken);
 
       res.status(200).json({
         message: MESSAGES.AUTH.REFRESH_SUCCESS,
@@ -89,35 +77,71 @@ class AuthController {
   // BKAV HaiHS : xử lý đổi mật khẩu - start
   async changePassword(req, res, next) {
     try {
-      // lấy dữ liệu từ req
       const { oldPassword, newPassword } = req.body;
       const userId = req.userId;
 
-      //  kiểm tra thiếu mật khẩu cũ hoặc mới ko?
-      if (!oldPassword || !newPassword) {
-        return res.status(400).json({
-          message: MESSAGES.AUTH.PASSWORD_REQUIRED,
-        });
-      }
-      // kiểm tra mật khẩu cũ trùng với mật khẩu mới
-      if (oldPassword === newPassword) {
-        return res.status(400).json({
-          message: MESSAGES.AUTH.PASSWORD_SAME,
-        });
+      const validation = this.#validatePasswordPayload(oldPassword, newPassword);
+      if (!validation.valid) {
+        return res.status(400).json({ message: validation.message });
       }
 
-      // Chuyển dữ liệu xuống hàm changePassword của authService để xử lý
       await authService.changePassword(userId, oldPassword, newPassword);
 
-      // trả lại response cho người dùng
       res.status(200).json({
         message: MESSAGES.AUTH.CHANGE_PASSWORD_SUCCESS,
       });
     } catch (error) {
-      next(error); // Đẩy lỗi ra file errorHandler
+      next(error);
     }
   }
   // BKAV HaiHS : xử lý đổi mật khẩu - end
+
+  // ==========================================
+  // PRIVATE METHODS (Viết xuống phía dưới)
+  // ==========================================
+
+  // BKAV HaiHS : Hàm phụ kiểm tra định dạng email - start
+  #isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra định dạng email - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của thông tin đăng nhập - start
+  #validateLoginPayload(email, password) {
+    if (!email || !password) {
+      return { valid: false, message: MESSAGES.AUTH.MISSING_FIELDS };
+    }
+    if (!this.#isValidEmail(email)) {
+      return { valid: false, message: MESSAGES.AUTH.INVALID_EMAIL };
+    }
+    return { valid: true };
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của thông tin đăng nhập - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của thông tin đổi mật khẩu - start
+  #validatePasswordPayload(oldPassword, newPassword) {
+    if (!oldPassword || !newPassword) {
+      return { valid: false, message: MESSAGES.AUTH.PASSWORD_REQUIRED };
+    }
+    if (oldPassword === newPassword) {
+      return { valid: false, message: MESSAGES.AUTH.PASSWORD_SAME };
+    }
+    return { valid: true };
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của thông tin đổi mật khẩu - end
+
+  // BKAV HaiHS : Hàm phụ thiết lập cookie chứa Refresh Token - start
+  #setRefreshTokenCookie(res, refreshToken) {
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: COOKIE_MAX_AGE,
+    });
+  }
+  // BKAV HaiHS : Hàm phụ thiết lập cookie chứa Refresh Token - end
 }
+// BKAV HaiHS : Định nghĩa lớp AuthController quản lý xác thực và mật khẩu - end
 
 module.exports = new AuthController();

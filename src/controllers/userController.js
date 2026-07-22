@@ -1,16 +1,15 @@
 const userService = require("../services/userService");
 const { MESSAGES } = require("../constants/messages");
 
+// BKAV HaiHS : Định nghĩa lớp UserController quản lý thông tin người dùng và tài khoản - start
 class UserController {
   // BKAV HaiHS : tạo người dùng mới - start
   async createUser(req, res, next) {
     try {
-      // Lấy dữ liệu và chuẩn hóa
       const email = req.body.email?.trim().toLowerCase();
       const fullname = req.body.fullname?.trim();
-      let groupIds = req.body.groupIds;
+      const rawGroupIds = req.body.groupIds;
 
-      // Kiểm tra các trường bắt buộc
       if (!email) {
         return res.status(400).json({ message: MESSAGES.USER.EMPTY_EMAIL });
       }
@@ -18,20 +17,19 @@ class UserController {
         return res.status(400).json({ message: MESSAGES.USER.EMPTY_NAME });
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
+      if (!this.#isValidEmail(email)) {
         return res.status(400).json({ message: MESSAGES.USER.INVALID_EMAIL });
       }
 
-      if (groupIds) {
-        if (!Array.isArray(groupIds)) {
+      let groupIds = [];
+      if (rawGroupIds) {
+        const parsed = this.#parseGroupIds(rawGroupIds);
+        if (parsed === null) {
           return res.status(400).json({
             message: MESSAGES.USER.INVALID_ARRAY,
           });
         }
-        groupIds = groupIds
-          .map((id) => parseInt(id))
-          .filter((id) => !isNaN(id));
+        groupIds = parsed;
       }
 
       const result = await userService.createUserByAdmin(
@@ -53,13 +51,9 @@ class UserController {
   // BKAV HaiHS : lấy danh sách người dùng phân trang - start
   async getAllUsers(req, res, next) {
     try {
-      let { page, limit } = req.query;
-      page = parseInt(page) || 1;
-      limit = parseInt(limit) || 10;
+      const { page: rawPage, limit: rawLimit } = req.query;
 
-      if (page < 1) page = 1;
-      if (limit < 1) limit = 10;
-      if (limit > 100) limit = 100;
+      const { page, limit } = this.#parsePagination(rawPage, rawLimit, 10);
 
       const result = await userService.getAllUsers(page, limit);
 
@@ -79,7 +73,7 @@ class UserController {
     try {
       const userId = parseInt(req.params.id);
 
-      if (isNaN(userId)) {
+      if (!this.#validateUserId(userId)) {
         return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
 
@@ -101,36 +95,31 @@ class UserController {
       const userId = parseInt(req.params.id);
       const email = req.body.email?.trim().toLowerCase();
       const fullname = req.body.fullname?.trim();
-      let groupIds = req.body.groupIds;
+      const rawGroupIds = req.body.groupIds;
 
-      if (isNaN(userId)) {
+      if (!this.#validateUserId(userId)) {
         return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
 
-      if (email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          return res
-            .status(400)
-            .json({ message: "Định dạng Email mới không hợp lệ!" });
-        }
+      if (email && !this.#isValidEmail(email)) {
+        return res
+          .status(400)
+          .json({ message: MESSAGES.USER.INVALID_NEW_EMAIL });
       }
 
       if (fullname !== undefined && fullname === "") {
-        return res
-          .status(400)
-          .json({ message: "Họ và tên không được để trống!" });
+        return res.status(400).json({ message: MESSAGES.USER.EMPTY_NAME });
       }
 
-      if (groupIds) {
-        if (!Array.isArray(groupIds)) {
+      let groupIds;
+      if (rawGroupIds) {
+        const parsed = this.#parseGroupIds(rawGroupIds);
+        if (parsed === null) {
           return res.status(400).json({
             message: MESSAGES.USER.INVALID_ARRAY,
           });
         }
-        groupIds = groupIds
-          .map((id) => parseInt(id))
-          .filter((id) => !isNaN(id));
+        groupIds = parsed;
       }
 
       const result = await userService.updateUser(
@@ -155,7 +144,7 @@ class UserController {
     try {
       const userId = parseInt(req.params.id);
 
-      if (isNaN(userId)) {
+      if (!this.#validateUserId(userId)) {
         return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
 
@@ -174,14 +163,9 @@ class UserController {
   async searchUsers(req, res, next) {
     try {
       const keyword = req.query.keyword?.trim() || "";
-      let { page, limit } = req.query;
+      const { page: rawPage, limit: rawLimit } = req.query;
 
-      page = parseInt(page) || 1;
-      limit = parseInt(limit) || 10;
-
-      if (page < 1) page = 1;
-      if (limit < 1) limit = 10;
-      if (limit > 100) limit = 100;
+      const { page, limit } = this.#parsePagination(rawPage, rawLimit, 10);
 
       const result = await userService.searchUsers(keyword, page, limit);
 
@@ -199,19 +183,14 @@ class UserController {
   // BKAV HaiHS : Tự cập nhật thông tin cá nhân (phone, address) - start
   async updateMyProfile(req, res, next) {
     try {
-      // nhận dữ liệu từ req và chuẩn hóa
       const userId = parseInt(req.userId);
       const phone = req.body.phone?.trim();
       const address = req.body.address?.trim();
 
-      if (phone) {
-        const phoneRegex = /^\d{10}$/; // Chỉ chứa số và có đúng 10 ký tự
-        if (!phoneRegex.test(phone)) {
-          return res.status(400).json({
-            message:
-              "Số điện thoại không hợp lệ! Bản chất phải chứa đúng 10 chữ số.",
-          });
-        }
+      if (phone && !this.#isValidPhone(phone)) {
+        return res.status(400).json({
+          message: MESSAGES.USER.INVALID_PHONE,
+        });
       }
 
       const result = await userService.updateMyProfile(userId, {
@@ -237,14 +216,12 @@ class UserController {
     try {
       const userId = parseInt(req.userId);
 
-      if (isNaN(userId)) {
+      if (!this.#validateUserId(userId)) {
         return res.status(400).json({ message: MESSAGES.USER.INVALID_ID });
       }
 
-      // gọi hàm deleteMyAccount của userService để xóa tài khoản cá nhân
       await userService.deleteMyAccount(userId);
 
-      // trả về kết quả cho người dùng
       res.status(200).json({
         message: MESSAGES.USER.DELETE_MY_ACCOUNT,
       });
@@ -253,6 +230,49 @@ class UserController {
     }
   }
   // BKAV HaiHS : Tự xóa tài khoản của chính mình - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của User ID - start
+  #validateUserId(userId) {
+    return !isNaN(userId);
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra tính hợp lệ của User ID - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra định dạng email - start
+  #isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra định dạng email - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra số điện thoại (10 chữ số) - start
+  #isValidPhone(phone) {
+    const phoneRegex = /^\d{10}$/;
+    return phoneRegex.test(phone);
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra số điện thoại (10 chữ số) - end
+
+  // BKAV HaiHS : Hàm phụ chuẩn hóa và kiểm tra mảng groupIds - start
+  #parseGroupIds(groupIds) {
+    if (!groupIds || !Array.isArray(groupIds)) {
+      return null;
+    }
+    return groupIds.map((id) => parseInt(id)).filter((id) => !isNaN(id));
+  }
+  // BKAV HaiHS : Hàm phụ chuẩn hóa và kiểm tra mảng groupIds - end
+
+  // BKAV HaiHS : Hàm phụ chuẩn hóa tham số phân trang - start
+  #parsePagination(page, limit, defaultLimit) {
+    let parsedPage = parseInt(page) || 1;
+    let parsedLimit = parseInt(limit) || defaultLimit;
+
+    if (parsedPage < 1) parsedPage = 1;
+    if (parsedLimit < 1) parsedLimit = defaultLimit;
+    if (parsedLimit > 100) parsedLimit = 100;
+
+    return { page: parsedPage, limit: parsedLimit };
+  }
+  // BKAV HaiHS : Hàm phụ chuẩn hóa tham số phân trang - end
 }
+// BKAV HaiHS : Định nghĩa lớp UserController quản lý thông tin người dùng và tài khoản - end
 
 module.exports = new UserController();
