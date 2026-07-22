@@ -5,66 +5,27 @@ const AppError = require("../utils/appError");
 const ERROR = require("../constants/errorCodes");
 const prisma = require("../models/prismaClient");
 
+// BKAV HaiHS : Định nghĩa lớp AuthService xử lý logic xác thực, sinh token và đổi mật khẩu - start
 class AuthService {
   // BKAV HaiHS : xử lý đăng nhập bằng 2 Token (Access + Refresh) - start
   async login(email, password) {
-    // Gọi Repo để lấy dữ liệu từ DB
     const user = await userRepository.findByEmail(email);
 
-    // Nếu không có user, ném lỗi ra ngoài (Controller sẽ bắt)
     if (!user) {
       throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
-    // So sánh mật khẩu
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new AppError(ERROR.AUTH.INVALID_CREDENTIALS);
     }
 
-    // Tính toán logic nghiệp vụ: Hợp nhất quyền hạn
-    const groupPerms = user.groups
-      ? user.groups.flatMap((g) => g.permissions)
-      : [];
-    const allPermissions = [...new Set([...user.permissions, ...groupPerms])];
+    const allPermissions = this.#mergePermissions(user);
+    const accessToken = this.#generateAccessToken(user, allPermissions);
+    const refreshToken = this.#generateRefreshToken(user.id);
 
-    // Cấu hình các mã khóa bí mật lấy từ env
-    const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
-    const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+    await this.#saveRefreshTokenToDb(user.id, refreshToken);
 
-    // Tạo Access Token (Hạn ngắn 15 phút)
-    const accessToken = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        fullname: user.fullname,
-        permissions: allPermissions,
-        phone: user.phone,
-        address: user.address,
-      },
-      ACCESS_SECRET,
-      { expiresIn: "15m" },
-    );
-
-    // Tạo Refresh Token (Hạn dài 7 ngày)
-    const refreshToken = jwt.sign(
-      {
-        id: user.id,
-      },
-      REFRESH_SECRET,
-      { expiresIn: "7d" },
-    );
-
-    // Lưu Refresh Token vào Database PostgreSQL
-    await prisma.refreshToken.create({
-      data: {
-        token: refreshToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 ngày
-      },
-    });
-
-    // Trả kết quả sạch sẽ về cho Controller
     return {
       accessToken,
       refreshToken,
@@ -89,17 +50,12 @@ class AuthService {
       });
     }
 
-    const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
     const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
-    let decoded;
     try {
-      decoded = jwt.verify(refreshToken, REFRESH_SECRET);
+      jwt.verify(refreshToken, REFRESH_SECRET);
     } catch (e) {
-      // Nếu hết hạn hoặc sai chữ ký, dọn dẹp DB luôn để dọn rác
-      await prisma.refreshToken
-        .delete({ where: { token: refreshToken } })
-        .catch(() => {});
+      await this.#deleteRefreshTokenFromDb(refreshToken);
 
       throw new AppError({
         statusCode: 401,
@@ -108,7 +64,6 @@ class AuthService {
       });
     }
 
-    // Đối chiếu với Database
     const dbToken = await prisma.refreshToken.findUnique({
       where: { token: refreshToken },
       include: { user: { include: { groups: true } } },
@@ -116,9 +71,7 @@ class AuthService {
 
     if (!dbToken || dbToken.expiresAt < new Date()) {
       if (dbToken) {
-        await prisma.refreshToken
-          .delete({ where: { token: refreshToken } })
-          .catch(() => {});
+        await this.#deleteRefreshTokenFromDb(refreshToken);
       }
       throw new AppError({
         statusCode: 401,
@@ -127,53 +80,19 @@ class AuthService {
       });
     }
 
-    // Lấy thông tin user từ database
     const user = dbToken.user;
-    const groupPerms = user.groups
-      ? user.groups.flatMap((g) => g.permissions)
-      : [];
-    const allPermissions = [...new Set([...user.permissions, ...groupPerms])];
+    const allPermissions = this.#mergePermissions(user);
 
-    // Xóa Refresh Token cũ để bảo mật (Refresh Token Rotation)
-    await prisma.refreshToken
-      .delete({ where: { token: refreshToken } })
-      .catch(() => {});
+    await this.#deleteRefreshTokenFromDb(refreshToken);
 
-    // Tạo Access Token mới (15 phút)
-    const accessToken = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        fullname: user.fullname,
-        permissions: allPermissions,
-        phone: user.phone,
-        address: user.address,
-      },
-      ACCESS_SECRET,
-      { expiresIn: "15m" },
-    );
+    const accessToken = this.#generateAccessToken(user, allPermissions);
+    const newRefreshToken = this.#generateRefreshToken(user.id);
 
-    // Cấp mới Refresh Token mới tinh (7 ngày) - Rolling Session
-    const newRefreshToken = jwt.sign(
-      {
-        id: user.id,
-      },
-      REFRESH_SECRET,
-      { expiresIn: "7d" },
-    );
-
-    // Lưu Refresh Token mới này vào Database
-    await prisma.refreshToken.create({
-      data: {
-        token: newRefreshToken,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Kéo dài thêm 7 ngày
-      },
-    });
+    await this.#saveRefreshTokenToDb(user.id, newRefreshToken);
 
     return {
       accessToken,
-      refreshToken: newRefreshToken, // Trả về Refresh Token mới để Controller ghi đè Cookie
+      refreshToken: newRefreshToken,
       user: {
         email: user.email,
         fullname: user.fullname,
@@ -185,39 +104,93 @@ class AuthService {
   }
   // BKAV HaiHS : Làm mới Access Token từ Refresh Token (Cơ chế Rolling Session / Rotation) - end
 
+  // BKAV HaiHS : xử lý đăng xuất giải phóng token - start
   async logout(refreshToken) {
     if (refreshToken) {
-      await prisma.refreshToken
-        .delete({ where: { token: refreshToken } })
-        .catch(() => {});
+      await this.#deleteRefreshTokenFromDb(refreshToken);
     }
     return true;
   }
-  // BKAV HaiHS : Làm mới Access Token từ Refresh Token - end
+  // BKAV HaiHS : xử lý đăng xuất giải phóng token - end
 
   // BKAV HaiHS : xử lý đổi mật khẩu - start
   async changePassword(userId, oldPassword, newPassword) {
-    // Tìm thông tin user hiện tại trong DB
     const user = await userRepository.findById(userId);
     if (!user) {
       throw new AppError(ERROR.USER.NOT_FOUND);
     }
 
-    // Kiểm tra xem mật khẩu cũ (hoặc mật khẩu tạm thời) nhập vào có đúng không
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
       throw new AppError(ERROR.AUTH.WRONG_OLD_PASSWORD);
     }
 
-    // Mã hóa mật khẩu mới
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
 
-    // Gọi Repo để lưu mật khẩu mới vào DB
     await userRepository.updatePassword(userId, hashedNewPassword);
 
     return true;
   }
   // BKAV HaiHS : xử lý đổi mật khẩu - end
+
+  // BKAV HaiHS : Hàm phụ tạo Access Token thời hạn ngắn - start
+  #generateAccessToken(user, permissions) {
+    const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
+    return jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        fullname: user.fullname,
+        permissions: permissions,
+        phone: user.phone,
+        address: user.address,
+      },
+      ACCESS_SECRET,
+      { expiresIn: "15m" },
+    );
+  }
+  // BKAV HaiHS : Hàm phụ tạo Access Token thời hạn ngắn - end
+
+  // BKAV HaiHS : Hàm phụ tạo Refresh Token thời hạn dài - start
+  #generateRefreshToken(userId) {
+    const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+    return jwt.sign(
+      {
+        id: userId,
+      },
+      REFRESH_SECRET,
+      { expiresIn: "7d" },
+    );
+  }
+  // BKAV HaiHS : Hàm phụ tạo Refresh Token thời hạn dài - end
+
+  // BKAV HaiHS : Hàm phụ gộp và loại trùng danh sách quyền của user và group - start
+  #mergePermissions(user) {
+    const groupPerms = user.groups
+      ? user.groups.flatMap((g) => g.permissions)
+      : [];
+    return [...new Set([...user.permissions, ...groupPerms])];
+  }
+  // BKAV HaiHS : Hàm phụ gộp và loại trùng danh sách quyền của user và group - end
+
+  // BKAV HaiHS : Hàm phụ lưu Refresh Token mới vào Database - start
+  async #saveRefreshTokenToDb(userId, token) {
+    await prisma.refreshToken.create({
+      data: {
+        token: token,
+        userId: userId,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 ngày
+      },
+    });
+  }
+  // BKAV HaiHS : Hàm phụ lưu Refresh Token mới vào Database - end
+
+  // BKAV HaiHS : Hàm phụ xóa Refresh Token khỏi Database - start
+  async #deleteRefreshTokenFromDb(token) {
+    await prisma.refreshToken.delete({ where: { token } }).catch(() => {});
+  }
+  // BKAV HaiHS : Hàm phụ xóa Refresh Token khỏi Database - end
 }
+// BKAV HaiHS : Định nghĩa lớp AuthService xử lý logic xác thực, sinh token và đổi mật khẩu - end
 
 module.exports = new AuthService();

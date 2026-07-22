@@ -1,4 +1,6 @@
 const nodemailer = require("nodemailer");
+
+// BKAV HaiHS : Định nghĩa lớp EmailService quản lý việc cấu hình và gửi Email tự động từ hệ thống - start
 class EmailService {
   // BKAV HaiHS : cấu hình transporter để gửi email - start
   constructor() {
@@ -11,7 +13,7 @@ class EmailService {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
       },
-      family: 4, // Ép IPv4
+      family: 4, // Ép IPv4 để tránh nghẽn khi resolve SMTP
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 10000,
@@ -21,9 +23,16 @@ class EmailService {
 
   // BKAV HaiHS : hàm gửi email - start
   async sendWelcomeEmail(toEmail, tempPassword) {
-    const loginLink = `${process.env.APP_URL}/login`; // Link dẫn tới trang đăng nhập Frontend
+    const mailOptions = this.#buildWelcomeMailOptions(toEmail, tempPassword);
+    await this.transporter.sendMail(mailOptions);
+  }
+  // BKAV HaiHS : hàm gửi email - end
 
-    const mailOptions = {
+  // BKAV HaiHS : Hàm phụ tạo cấu hình và template html cho email chào mừng - start
+  #buildWelcomeMailOptions(toEmail, tempPassword) {
+    const loginLink = `${process.env.APP_URL}/login`;
+
+    return {
       from: `"Mini AgentHub Admin" <${process.env.EMAIL_USER}>`,
       to: toEmail,
       subject: "🚀 Chào mừng bạn gia nhập hệ thống Mini AgentHub!",
@@ -51,10 +60,9 @@ class EmailService {
         </div>
       `,
     };
-
-    await this.transporter.sendMail(mailOptions);
   }
-  // BKAV HaiHS : hàm gửi email - end
+  // BKAV HaiHS : Hàm phụ tạo cấu hình và template html cho email chào mừng - end
 }
+// BKAV HaiHS : Định nghĩa lớp EmailService quản lý việc cấu hình và gửi Email tự động từ hệ thống - end
 
 module.exports = new EmailService();

@@ -7,9 +7,10 @@ const tiktokenEncoder = getEncoding("cl100k_base");
 // Cấu trúc: streamId -> { nextSeq, pending: Map<seq, event>, abortController, clientHandlers, ... }
 const streams = new Map();
 
+// BKAV HaiHS : Định nghĩa lớp AIStreamManager quản lý điều phối luồng stream AI cục bộ và phân tán - start
 class AIStreamManager {
   constructor() {}
-
+  // BKAV HaiHS : Khởi chạy luồng stream AI chạy nền - start
   async startBackgroundStream(
     streamId,
     chatModelPromise,
@@ -42,7 +43,9 @@ class AIStreamManager {
       abortController,
     );
   }
+  // BKAV HaiHS : Khởi chạy luồng stream AI chạy nền - end
 
+  // BKAV HaiHS : Đăng ký kết nối client SSE trực tiếp với server - start
   async connectClient(streamId, res) {
     const state = streams.get(streamId);
     if (!state) {
@@ -72,7 +75,9 @@ class AIStreamManager {
       res.end();
     }
   }
+  // BKAV HaiHS : Đăng ký kết nối client SSE trực tiếp với server - end
 
+  // BKAV HaiHS : Khôi phục và phát tiếp stream dở dang cho client khi reconnection - start
   async subscribeWithResume(streamId, res) {
     const resumeState = {
       connectionIsOpen: true,
@@ -99,7 +104,9 @@ class AIStreamManager {
 
     resumeState.isSynced = true;
   }
+  // BKAV HaiHS : Khôi phục và phát tiếp stream dở dang cho client khi reconnection - end
 
+  // BKAV HaiHS : Hủy bỏ phiên stream chat cục bộ và phát tín hiệu chéo hệ thống - start
   async abortSession(streamId) {
     const state = streams.get(streamId);
     if (state) {
@@ -107,16 +114,26 @@ class AIStreamManager {
     }
     await redisStreamService.publishAbort(streamId);
   }
+  // BKAV HaiHS : Hủy bỏ phiên stream chat cục bộ và phát tín hiệu chéo hệ thống - end
 
+  // BKAV HaiHS : Kiểm tra trạng thái hoạt động của stream trong Redis - start
   async isStreamActive(streamId) {
     return await redisStreamService.isStreamActive(streamId);
   }
+  // BKAV HaiHS : Kiểm tra trạng thái hoạt động của stream trong Redis - end
 
+  // ==========================================
+  // PRIVATE METHODS (Viết xuống phía dưới)
+  // ==========================================
+
+  // BKAV HaiHS : Hàm phụ đếm token bằng encoder tiktoken - start
   #countTokens(text) {
     if (!text) return 0;
     return tiktokenEncoder.encode(text).length;
   }
+  // BKAV HaiHS : Hàm phụ đếm token bằng encoder tiktoken - end
 
+  // BKAV HaiHS : Hàm phụ tính tổng token ngữ cảnh đầu vào - start
   #calculatePromptTokens(prompt, historyMessages) {
     let fullPromptText = prompt || "";
     if (Array.isArray(historyMessages)) {
@@ -125,7 +142,9 @@ class AIStreamManager {
     }
     return this.#countTokens(fullPromptText) + 40;
   }
+  // BKAV HaiHS : Hàm phụ tính tổng token ngữ cảnh đầu vào - end
 
+  // BKAV HaiHS : Hàm phụ bóc tách usage token từ thông điệp DONE - start
   #parseDoneUsage(dataStr) {
     if (!dataStr.startsWith("[DONE]")) return null;
     try {
@@ -137,7 +156,9 @@ class AIStreamManager {
       return null;
     }
   }
+  // BKAV HaiHS : Hàm phụ bóc tách usage token từ thông điệp DONE - end
 
+  // BKAV HaiHS : Hàm phụ bóc tách nội dung văn bản từ chuỗi JSON - start
   #parseJsonContent(dataStr) {
     try {
       const parsed = JSON.parse(dataStr);
@@ -146,7 +167,9 @@ class AIStreamManager {
       return "";
     }
   }
+  // BKAV HaiHS : Hàm phụ bóc tách nội dung văn bản từ chuỗi JSON - end
 
+  // BKAV HaiHS : Hàm phụ phân tích cấu trúc một dòng dữ liệu SSE - start
   #parseChunkLine(line, currentState) {
     const cleaned = line.trim();
     if (!cleaned.startsWith("data: ")) return "";
@@ -161,7 +184,9 @@ class AIStreamManager {
 
     return this.#parseJsonContent(dataStr);
   }
+  // BKAV HaiHS : Hàm phụ phân tích cấu trúc một dòng dữ liệu SSE - end
 
+  // BKAV HaiHS : Hàm phụ trích xuất text sạch từ buffer thô - start
   #extractCleanTextFromChunk(chunkText, currentState) {
     let cleanText = "";
     const lines = chunkText.split("\n");
@@ -170,9 +195,9 @@ class AIStreamManager {
     }
     return cleanText;
   }
+  // BKAV HaiHS : Hàm phụ trích xuất text sạch từ buffer thô - end
 
-  // --- 2. Format & Payload Helpers ---
-
+  // BKAV HaiHS : Hàm phụ đóng gói payload dữ liệu DONE - start
   #buildDonePayload(eventOrState) {
     if (!eventOrState) return {};
     const payload = {};
@@ -183,7 +208,9 @@ class AIStreamManager {
       payload.isStopped = eventOrState.isStopped;
     return payload;
   }
+  // BKAV HaiHS : Hàm phụ đóng gói payload dữ liệu DONE - end
 
+  // BKAV HaiHS : Hàm phụ ghi sự kiện DONE SSE xuống kết nối client - start
   #writeSseDone(res, payloadSource) {
     const donePayload = this.#buildDonePayload(payloadSource);
     if (Object.keys(donePayload).length > 0) {
@@ -192,7 +219,9 @@ class AIStreamManager {
       res.write("data: [DONE]\n\n");
     }
   }
+  // BKAV HaiHS : Hàm phụ ghi sự kiện DONE SSE xuống kết nối client - end
 
+  // BKAV HaiHS : Hàm phụ phân phối và gửi sự kiện SSE tới client - start
   #sendSseEvent(res, event) {
     if (event.type === "chunk") {
       res.write(`data: ${JSON.stringify({ content: event.content })}\n\n`);
@@ -210,7 +239,9 @@ class AIStreamManager {
     }
     return false;
   }
+  // BKAV HaiHS : Hàm phụ phân phối và gửi sự kiện SSE tới client - end
 
+  // BKAV HaiHS : Hàm phụ đo lường thời gian phản hồi và số lượng token - start
   #calculateUsageAndResponseTime(state) {
     if (!state) return { responseTime: "", usage: null };
 
@@ -230,9 +261,9 @@ class AIStreamManager {
 
     return { responseTime, usage: state.usage };
   }
+  // BKAV HaiHS : Hàm phụ đo lường thời gian phản hồi và số lượng token - end
 
-  // --- 3. Buffer & Dispatch Helpers ---
-
+  // BKAV HaiHS : Hàm phụ xả các tin nhắn theo đúng trình tự từ ReorderBuffer - start
   #flushPendingMessages(streamId) {
     const state = streams.get(streamId);
     if (!state) return;
@@ -251,7 +282,9 @@ class AIStreamManager {
       }
     }
   }
+  // BKAV HaiHS : Hàm phụ xả các tin nhắn theo đúng trình tự từ ReorderBuffer - end
 
+  // BKAV HaiHS : Hàm phụ xử lý riêng biệt cho một chunk đơn lẻ - start
   async #processSingleChunk(
     streamId,
     cleanText,
@@ -271,7 +304,9 @@ class AIStreamManager {
     currentState.pending.set(seq, event);
     this.#flushPendingMessages(streamId);
   }
+  // BKAV HaiHS : Hàm phụ xử lý riêng biệt cho một chunk đơn lẻ - end
 
+  // BKAV HaiHS : Hàm phụ phân phối tin nhắn đến các local handler - start
   #notifyLocalHandlers(state, event) {
     if (!state) return;
     for (const handler of state.clientHandlers) {
@@ -282,9 +317,9 @@ class AIStreamManager {
       }
     }
   }
+  // BKAV HaiHS : Hàm phụ phân phối tin nhắn đến các local handler - end
 
-  // --- 4. Database & Error Helpers ---
-
+  // BKAV HaiHS : Hàm phụ lưu thông tin hội thoại vào cơ sở dữ liệu - start
   async #saveMessageToDb(streamId, state, isStopped) {
     if (!state || state.isFinished) return;
     state.isFinished = true;
@@ -303,7 +338,9 @@ class AIStreamManager {
       isStopped,
     });
   }
+  // BKAV HaiHS : Hàm phụ lưu thông tin hội thoại vào cơ sở dữ liệu - end
 
+  // BKAV HaiHS : Hàm phụ xử lý dữ liệu dở dang khi bị dừng stream đột ngột - start
   async #handleStreamAbortError(streamId, currentState) {
     if (
       currentState &&
@@ -325,13 +362,17 @@ class AIStreamManager {
       this.#notifyLocalHandlers(currentState, doneEvent);
     }
   }
+  // BKAV HaiHS : Hàm phụ xử lý dữ liệu dở dang khi bị dừng stream đột ngột - end
 
+  // BKAV HaiHS : Hàm phụ xử lý và bắn lỗi hệ thống chéo Redis/Client - start
   async #handleStreamGeneralError(streamId, err) {
     const errorEvent = { type: "ERROR", message: err.message };
     await redisStreamService.publishChunk(streamId, errorEvent);
     this.#notifyLocalHandlers(streams.get(streamId), errorEvent);
   }
+  // BKAV HaiHS : Hàm phụ xử lý và bắn lỗi hệ thống chéo Redis/Client - end
 
+  // BKAV HaiHS : Hàm phụ hoàn thiện và lưu trữ stream khi AI hoàn thành - start
   async #finishBackgroundStreamSuccess(streamId) {
     const currentStateDone = streams.get(streamId);
     const { responseTime, usage } =
@@ -350,7 +391,9 @@ class AIStreamManager {
     this.#notifyLocalHandlers(currentStateDone, doneEvent);
     await this.#saveMessageToDb(streamId, streams.get(streamId), false);
   }
+  // BKAV HaiHS : Hàm phụ hoàn thiện và lưu trữ stream khi AI hoàn thành - end
 
+  // BKAV HaiHS : Hàm phụ dọn dẹp các tài nguyên phòng stream khi kết thúc - start
   async #cleanupStreamState(streamId, unsubscribeControl) {
     const finalState = streams.get(streamId);
     if (finalState) finalState.isFinished = true;
@@ -363,7 +406,9 @@ class AIStreamManager {
     await redisStreamService.deleteStream(streamId);
     streams.delete(streamId);
   }
+  // BKAV HaiHS : Hàm phụ dọn dẹp các tài nguyên phòng stream khi kết thúc - end
 
+  // BKAV HaiHS : Hàm phụ khởi chạy tiến trình xử lý luồng stream nền - start
   async #runBackgroundStreamProcess(
     streamId,
     chatModelPromise,
@@ -411,12 +456,21 @@ class AIStreamManager {
         await this.#handleStreamGeneralError(streamId, err);
       }
     } finally {
-      await this.#cleanupStreamState(streamId, unsubscribeControl);
+      await this.#runBackgroundStreamProcessFinally(
+        streamId,
+        unsubscribeControl,
+      );
     }
   }
+  // BKAV HaiHS : Hàm phụ khởi chạy tiến trình xử lý luồng stream nền - end
 
-  // --- 5. Resume & Replay Helpers ---
+  // BKAV HaiHS : Hàm phụ bọc logic dọn dẹp khối finally của stream nền - start
+  async #runBackgroundStreamProcessFinally(streamId, unsubscribeControl) {
+    await this.#cleanupStreamState(streamId, unsubscribeControl);
+  }
+  // BKAV HaiHS : Hàm phụ bọc logic dọn dẹp khối finally của stream nền - end
 
+  // BKAV HaiHS : Hàm phụ xử lý các gói tin nhận từ Redis PubSub - start
   #createPubSubHandler(state) {
     return async (event) => {
       if (!state.connectionIsOpen) return;
@@ -432,7 +486,9 @@ class AIStreamManager {
       }
     };
   }
+  // BKAV HaiHS : Hàm phụ xử lý các gói tin nhận từ Redis PubSub - end
 
+  // BKAV HaiHS : Hàm phụ gọi dịch vụ Redis lấy danh sách các chunk lịch sử - start
   async #fetchHistoryEvents(streamId) {
     try {
       return await redisStreamService.getChunks(streamId);
@@ -440,7 +496,9 @@ class AIStreamManager {
       return [];
     }
   }
+  // BKAV HaiHS : Hàm phụ gọi dịch vụ Redis lấy danh sách các chunk lịch sử - end
 
+  // BKAV HaiHS : Hàm phụ xử lý gộp các chunk lịch sử thành chuỗi hoàn chỉnh - start
   #processHistoryChunks(historyEvents) {
     const chunks = historyEvents
       .filter((e) => e.type === "chunk")
@@ -452,12 +510,16 @@ class AIStreamManager {
       doneEvent: historyEvents.find((e) => e.type === "DONE"),
     };
   }
+  // BKAV HaiHS : Hàm phụ xử lý gộp các chunk lịch sử thành chuỗi hoàn chỉnh - end
 
+  // BKAV HaiHS : Hàm phụ đẩy gói tin đồng bộ lịch sử xuống Client SSE - start
   #sendHistorySync(res, fullText, resumeFromSeq) {
     const payload = { sync: true, content: fullText, resumeFromSeq };
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   }
+  // BKAV HaiHS : Hàm phụ đẩy gói tin đồng bộ lịch sử xuống Client SSE - end
 
+  // BKAV HaiHS : Hàm phụ kiểm tra và xử lý đóng luồng khi lịch sử trống - start
   async #checkAndHandleEmptyHistory(
     streamId,
     historyEvents,
@@ -476,7 +538,9 @@ class AIStreamManager {
     }
     return false;
   }
+  // BKAV HaiHS : Hàm phụ kiểm tra và xử lý đóng luồng khi lịch sử trống - end
 
+  // BKAV HaiHS : Hàm phụ ghi tiếp các gói tin tạm giữ trong buffer xuống Client - start
   async #replayBufferedEvents(liveBuffer, syncedSeq, handleTerminal, res) {
     for (const event of liveBuffer) {
       if (event.type === "DONE" || event.type === "ABORT") {
@@ -489,7 +553,9 @@ class AIStreamManager {
     }
     return false;
   }
+  // BKAV HaiHS : Hàm phụ ghi tiếp các gói tin tạm giữ trong buffer xuống Client - end
 
+  // BKAV HaiHS : Hàm phụ đăng ký theo dõi kênh Redis phục vụ kết nối lại - start
   async #setupResumeSubscription(streamId, res, resumeState) {
     let unsubscribe;
 
@@ -515,7 +581,9 @@ class AIStreamManager {
 
     return unsubscribe;
   }
+  // BKAV HaiHS : Hàm phụ đăng ký theo dõi kênh Redis phục vụ kết nối lại - end
 
+  // BKAV HaiHS : Hàm phụ đồng bộ lịch sử và xả buffer dồn tin nhắn reconnection - start
   async #syncHistoryAndReplayBuffer(streamId, res, resumeState, unsubscribe) {
     const historyEvents = await this.#fetchHistoryEvents(streamId);
 
@@ -549,6 +617,8 @@ class AIStreamManager {
       res,
     );
   }
+  // BKAV HaiHS : Hàm phụ đồng bộ lịch sử và xả buffer dồn tin nhắn reconnection - end
 }
+// BKAV HaiHS : Định nghĩa lớp AIStreamManager quản lý điều phối luồng stream AI cục bộ và phân tán - end
 
 module.exports = new AIStreamManager();

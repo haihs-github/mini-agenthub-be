@@ -3,10 +3,10 @@ const AppError = require("../utils/appError");
 const ERROR = require("../constants/errorCodes");
 const aiService = require("./aiService");
 
+// BKAV HaiHS : Định nghĩa lớp ConversationService quản lý các logic nghiệp vụ liên quan đến hội thoại - start
 class ConversationService {
   // BKAV HaiHS : Logic tạo phòng - start
   async createConversation(userId, title) {
-    // Tầng Controller đã bảo đảm userId là Int và title đã được trim + gán mặc định
     const conversationData = {
       userId,
       title,
@@ -17,8 +17,7 @@ class ConversationService {
 
   // BKAV HaiHS : Logic lấy danh sách Lịch sử đoạn chat - start
   async getUserConversations(userId, page, limit) {
-    // page và limit đã được Controller đảm bảo lớn hơn hoặc bằng 1
-    const skip = (page - 1) * limit;
+    const skip = this.#calculatePaginationSkip(page, limit);
     const take = limit;
 
     const { conversations, total } =
@@ -34,7 +33,7 @@ class ConversationService {
 
   // BKAV HaiHS : Logic lấy chi tiết khung chat - start
   async getConversationDetail(id, userId, page, limit) {
-    const skip = (page - 1) * limit;
+    const skip = this.#calculatePaginationSkip(page, limit);
     const take = limit;
 
     const conversation = await conversationRepository.findByIdAndUser(
@@ -48,8 +47,6 @@ class ConversationService {
       throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
     }
 
-    // Vì DB trả về dạng tin nhắn mới nhất đứng đầu (do phục vụ phân trang),
-    // ta đảo ngược lại mảng để tin nhắn cũ ở trên, tin nhắn mới ở dưới chuẩn giao diện chat
     conversation.messages.reverse();
 
     return conversation;
@@ -60,7 +57,6 @@ class ConversationService {
   async updateConversationTitle(id, userId, title) {
     const result = await conversationRepository.updateTitle(id, userId, title);
 
-    // KIỂM TRA NGHIỆP VỤ: Nếu count bằng 0 nghĩa là sai ID phòng hoặc người dùng cố tình can thiệp phòng người khác
     if (result.count === 0) {
       throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
     }
@@ -81,7 +77,7 @@ class ConversationService {
   }
   // BKAV HaiHS : Logic xóa phòng chat - end
 
-  // BKAV HaiHS : chuan bi ngu canh va goi aiService kem tin hieu abort - start
+  // BKAV HaiHS : chuẩn bị ngữ cảnh và gọi aiService kèm tín hiệu abort - start
   async prepareChatStream(
     conversationId,
     userId,
@@ -90,37 +86,23 @@ class ConversationService {
     files = [],
     signal,
   ) {
-    // Kiểm tra quyền sở hữu phòng chat (Logic nghiệp vụ gác cổng tài nguyên)
-    const conversation = await conversationRepository.findByIdAndUser(
-      conversationId,
-      userId,
-    );
-    if (!conversation) {
-      throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
-    }
+    await this.#verifyConversationOwnership(conversationId, userId);
 
-    // Chuyển đổi cấu trúc dữ liệu file mảng của Multer thành cấu trúc lưu trữ của schema DB
-    const attachmentsData = files.map((file) => ({
-      filePath: file.path,
-      fileType: file.mimetype,
-    }));
+    const attachmentsData = this.#formatAttachments(files);
 
-    // Ra lệnh cho Repository thực thi ghi nhận tin nhắn mới
     await conversationRepository.createMessage(
       {
         role: "user",
         content: prompt,
         modelName: modelName,
-        conversationId, // Đã là số nguyên chuẩn từ Controller
+        conversationId,
       },
       attachmentsData,
     );
 
-    // Thu thập toàn bộ lịch sử hội thoại để làm ngữ cảnh truyền đi
     const historyContext =
       await conversationRepository.getMessages(conversationId);
 
-    // Bàn giao cho tầng dịch vụ AI xử lý kết nối máy chủ
     return await aiService.generateStreamResponse(
       modelName,
       prompt,
@@ -128,7 +110,7 @@ class ConversationService {
       signal,
     );
   }
-  // BKAV HaiHS : chuan bi ngu canh va goi aiService kem tin hieu abort - end
+  // BKAV HaiHS : chuẩn bị ngữ cảnh và gọi aiService kèm tín hiệu abort - end
 
   // BKAV HaiHS : lưu câu trả lời của AI vào db - start
   async saveAssistantMessage(conversationId, content, modelName) {
@@ -143,10 +125,39 @@ class ConversationService {
 
   // BKAV HaiHS : Logic xóa toàn bộ phòng chat chính chủ - start
   async clearAllConversations(userId) {
-    // userId truyền xuống đây chắc chắn đã là số nguyên sạch từ Controller
     return await conversationRepository.deleteAllByUserId(userId);
   }
   // BKAV HaiHS : Logic xóa toàn bộ phòng chat chính chủ - end
+
+  // BKAV HaiHS : Hàm phụ tính toán số dòng cần bỏ qua khi phân trang - start
+  #calculatePaginationSkip(page, limit) {
+    return (page - 1) * limit;
+  }
+  // BKAV HaiHS : Hàm phụ tính toán số dòng cần bỏ qua khi phân trang - end
+
+  // BKAV HaiHS : Hàm phụ ánh xạ mảng files của Multer thành cấu trúc đính kèm của DB - start
+  #formatAttachments(files) {
+    if (!files || !Array.isArray(files)) return [];
+    return files.map((file) => ({
+      filePath: file.path,
+      fileType: file.mimetype,
+    }));
+  }
+  // BKAV HaiHS : Hàm phụ ánh xạ mảng files của Multer thành cấu trúc đính kèm của DB - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra quyền sở hữu phòng chat của user - start
+  async #verifyConversationOwnership(conversationId, userId) {
+    const conversation = await conversationRepository.findByIdAndUser(
+      conversationId,
+      userId,
+    );
+    if (!conversation) {
+      throw new AppError(ERROR.CONVERSATION.NOT_FOUND);
+    }
+    return conversation;
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra quyền sở hữu phòng chat của user - end
 }
+// BKAV HaiHS : Định nghĩa lớp ConversationService quản lý các logic nghiệp vụ liên quan đến hội thoại - end
 
 module.exports = new ConversationService();

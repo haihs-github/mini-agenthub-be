@@ -3,140 +3,89 @@ const AppError = require("../utils/appError");
 const ERROR = require("../constants/errorCodes");
 const redisStreamService = require("./redisStreamService");
 
+// BKAV HaiHS : Định nghĩa lớp GroupService quản lý logic nghiệp vụ cho nhóm quyền - start
 class GroupService {
   // BKAV HaiHS : xử lý tạo nhóm mới - start
   async createGroup(name, permissions = [], userIds = []) {
-    // 1. KIỂM TRA NGHIỆP VỤ: Tên nhóm là duy nhất dưới DB
-    const existingGroup = await groupRepository.findByName(name);
-    if (existingGroup) {
-      throw new AppError(ERROR.GROUP.ALREADY_EXISTS);
-    }
+    await this.#checkGroupNameUnique(name);
 
     const groupData = {
       name,
       permissions,
     };
 
-    // 2. Gán user vào nhóm (userIds xuống đây chắc chắn đã là mảng số nguyên sạch)
     if (userIds.length > 0) {
       groupData.users = {
-        // Không cần parseInt() lại nữa vì Controller đã lo việc này
         connect: userIds.map((id) => ({ id })),
       };
     }
 
     const group = await groupRepository.create(groupData);
-    //  Xóa cache danh sách nhóm và danh sách phân trang người dùng nếu có gán user
-    await redisStreamService.cacheDelPattern("groups:page:*");
-    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
-    if (userIds.length > 0) {
-      await redisStreamService.cacheDelPattern("users:page:*");
-    }
+
+    await this.#clearGroupListCache(userIds.length > 0);
+
     return group;
   }
   // BKAV HaiHS : xử lý tạo nhóm mới - end
 
-  //   BKAV HaiHS : xử lý cập nhật cho nhóm - start
+  // BKAV HaiHS : xử lý cập nhật cho nhóm - start
   async updateGroup(groupId, name, permissions) {
-    // 1. KIỂM TRA NGHIỆP VỤ: Nhóm phải tồn tại thật trong hệ thống
-    const group = await groupRepository.findById(groupId);
-    if (!group) {
-      throw new AppError(ERROR.GROUP.NOT_FOUND);
-    }
+    const group = await this.#fetchAndVerifyGroup(groupId);
 
     const updateData = {};
 
-    // 2. Logic kiểm tra trùng tên nhóm khi có sự thay đổi tên
     if (name && name !== group.name) {
-      const existingGroup = await groupRepository.findByName(name);
-      if (existingGroup) {
-        throw new AppError(ERROR.GROUP.ALREADY_EXISTS);
-      }
+      await this.#checkGroupNameUnique(name);
       updateData.name = name;
     }
 
-    // Đã bỏ hoàn toàn logic check Array.isArray vì Controller mới đã gác cổng nghiêm ngặt
     if (permissions) {
       updateData.permissions = permissions;
     }
 
     const updated = await groupRepository.update(groupId, updateData);
-    // BKAV HaiHS : Xóa cache nhóm, cache tìm kiếm và phân quyền của toàn bộ user liên quan - start
-    await redisStreamService.cacheDel(`group:${groupId}:profile`);
-    await redisStreamService.cacheDelPattern("groups:page:*");
-    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
-    await redisStreamService.cacheDelPattern("user:*:permissions");
-    await redisStreamService.cacheDelPattern("user:*:profile");
-    await redisStreamService.cacheDelPattern("users:page:*");
-    // BKAV HaiHS : Xóa cache nhóm và phân quyền của toàn bộ user liên quan - end
+
+    await this.#clearGroupDetailCache(groupId);
+
     return updated;
   }
-  //   BKAV HaiHS : xử lý cập nhật cho nhóm - end
+  // BKAV HaiHS : xử lý cập nhật cho nhóm - end
 
   // BKAV HaiHS : xử lý thêm người dùng vào nhóm - start
   async addUsersToGroup(groupId, userIds) {
-    const group = await groupRepository.findById(groupId);
-    if (!group) {
-      throw new AppError(ERROR.GROUP.NOT_FOUND);
-    }
+    await this.#fetchAndVerifyGroup(groupId);
 
-    // Bỏ check trống mảng vì Controller đã chặn từ xa
     const result = await groupRepository.addUsersToGroup(groupId, userIds);
-    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang, tìm kiếm và phân quyền của các user liên quan - start
-    await redisStreamService.cacheDel(`group:${groupId}:profile`);
-    await redisStreamService.cacheDelPattern("groups:page:*");
-    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
-    await redisStreamService.cacheDelPattern("users:page:*");
-    for (const userId of userIds) {
-      await redisStreamService.cacheDel(`user:${userId}:permissions`);
-      await redisStreamService.cacheDel(`user:${userId}:profile`);
-    }
-    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang và phân quyền của các user liên quan - end
+
+    await this.#clearGroupDetailCache(groupId, userIds);
+
     return result;
   }
   // BKAV HaiHS : xử lý thêm người dùng vào nhóm - end
 
   // BKAV HaiHS : xử lý xóa nhóm - start
   async deleteGroup(groupId) {
-    const group = await groupRepository.findById(groupId);
-    if (!group) {
-      throw new AppError(ERROR.GROUP.NOT_FOUND);
-    }
+    await this.#fetchAndVerifyGroup(groupId);
 
     const result = await groupRepository.delete(groupId);
-    // BKAV HaiHS : Xóa cache nhóm, cache tìm kiếm và phân quyền của toàn bộ user liên quan - start
-    await redisStreamService.cacheDel(`group:${groupId}:profile`);
-    await redisStreamService.cacheDelPattern("groups:page:*");
-    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
-    await redisStreamService.cacheDelPattern("user:*:permissions");
-    await redisStreamService.cacheDelPattern("user:*:profile");
-    await redisStreamService.cacheDelPattern("users:page:*");
-    // BKAV HaiHS : Xóa cache nhóm và phân quyền của toàn bộ user liên quan - end
+
+    await this.#clearGroupDetailCache(groupId);
+
     return result;
   }
   // BKAV HaiHS : xử lý xóa nhóm - end
 
   // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
   async removeUsersFromGroup(groupId, userIds) {
-    const group = await groupRepository.findById(groupId);
-    if (!group) {
-      throw new AppError(ERROR.GROUP.NOT_FOUND);
-    }
+    await this.#fetchAndVerifyGroup(groupId);
 
     const result = await groupRepository.removeUsersFromGroup(groupId, userIds);
-    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang, tìm kiếm và phân quyền của các user liên quan - start
-    await redisStreamService.cacheDel(`group:${groupId}:profile`);
-    await redisStreamService.cacheDelPattern("groups:page:*");
-    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
-    await redisStreamService.cacheDelPattern("users:page:*");
-    for (const userId of userIds) {
-      await redisStreamService.cacheDel(`user:${userId}:permissions`);
-      await redisStreamService.cacheDel(`user:${userId}:profile`);
-    }
-    // BKAV HaiHS : Xóa cache nhóm, danh sách phân trang và phân quyền của các user liên quan - end
+
+    await this.#clearGroupDetailCache(groupId, userIds);
+
     return result;
   }
-  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - start
+  // BKAV HaiHS : xử lý xóa người dùng khỏi nhóm - end
 
   // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - start
   async getAllGroups(page, limit) {
@@ -146,7 +95,7 @@ class GroupService {
       return JSON.parse(cached);
     }
 
-    const skip = (page - 1) * limit;
+    const skip = this.#calculatePaginationSkip(page, limit);
     const take = limit;
 
     const { groups, total } = await groupRepository.findAndCountAll(skip, take);
@@ -157,7 +106,7 @@ class GroupService {
         id: g.id,
         name: g.name,
         permissions: g.permissions,
-        memberCount: g._count.users, // Số lượng thành viên
+        memberCount: g._count.users,
       })),
       pagination: {
         totalItems: total,
@@ -167,7 +116,7 @@ class GroupService {
       },
     };
 
-    await redisStreamService.cacheSet(cacheKey, JSON.stringify(result), 300); // 5 phút
+    await redisStreamService.cacheSet(cacheKey, JSON.stringify(result), 300);
     return result;
   }
   // BKAV HaiHS : xử lý lấy danh sách nhóm có phân trang - end
@@ -185,7 +134,7 @@ class GroupService {
       throw new AppError(ERROR.GROUP.NOT_FOUND);
     }
 
-    await redisStreamService.cacheSet(cacheKey, JSON.stringify(group), 86400); // 24 giờ
+    await redisStreamService.cacheSet(cacheKey, JSON.stringify(group), 86400);
     return group;
   }
   // BKAV HaiHS : xử lý lấy chi tiết nhóm (kèm danh sách thành viên) - end
@@ -199,7 +148,7 @@ class GroupService {
       return JSON.parse(cached);
     }
 
-    const skip = (page - 1) * limit;
+    const skip = this.#calculatePaginationSkip(page, limit);
     const take = limit;
 
     const { groups, total } = await groupRepository.searchAndCount({
@@ -225,10 +174,65 @@ class GroupService {
       },
     };
 
-    await redisStreamService.cacheSet(cacheKey, JSON.stringify(result), 300); // 5 phút
+    await redisStreamService.cacheSet(cacheKey, JSON.stringify(result), 300);
     return result;
   }
   // BKAV HaiHS : xử lý tìm kiếm nhóm có phân trang và caching - end
+
+  // BKAV HaiHS : Hàm phụ kiểm tra tên nhóm là duy nhất - start
+  async #checkGroupNameUnique(name) {
+    const existingGroup = await groupRepository.findByName(name);
+    if (existingGroup) {
+      throw new AppError(ERROR.GROUP.ALREADY_EXISTS);
+    }
+  }
+  // BKAV HaiHS : Hàm phụ kiểm tra tên nhóm là duy nhất - end
+
+  // BKAV HaiHS : Hàm phụ lấy thông tin nhóm và xác thực sự tồn tại - start
+  async #fetchAndVerifyGroup(groupId) {
+    const group = await groupRepository.findById(groupId);
+    if (!group) {
+      throw new AppError(ERROR.GROUP.NOT_FOUND);
+    }
+    return group;
+  }
+  // BKAV HaiHS : Hàm phụ lấy thông tin nhóm và xác thực sự tồn tại - end
+
+  // BKAV HaiHS : Hàm phụ xóa cache danh sách nhóm - start
+  async #clearGroupListCache(hasUserConnections = false) {
+    await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
+    if (hasUserConnections) {
+      await redisStreamService.cacheDelPattern("users:page:*");
+    }
+  }
+  // BKAV HaiHS : Hàm phụ xóa cache danh sách nhóm - end
+
+  // BKAV HaiHS : Hàm phụ dọn dẹp cache profile nhóm và quyền hạn của các user liên quan - start
+  async #clearGroupDetailCache(groupId, userIds = []) {
+    await redisStreamService.cacheDel(`group:${groupId}:profile`);
+    await redisStreamService.cacheDelPattern("groups:page:*");
+    await redisStreamService.cacheDelPattern("groups:page:*:search:*");
+    await redisStreamService.cacheDelPattern("users:page:*");
+
+    if (userIds.length > 0) {
+      for (const userId of userIds) {
+        await redisStreamService.cacheDel(`user:${userId}:permissions`);
+        await redisStreamService.cacheDel(`user:${userId}:profile`);
+      }
+    } else {
+      await redisStreamService.cacheDelPattern("user:*:permissions");
+      await redisStreamService.cacheDelPattern("user:*:profile");
+    }
+  }
+  // BKAV HaiHS : Hàm phụ dọn dẹp cache profile nhóm và quyền hạn của các user liên quan - end
+
+  // BKAV HaiHS : Hàm phụ tính toán skip phân trang - start
+  #calculatePaginationSkip(page, limit) {
+    return (page - 1) * limit;
+  }
+  // BKAV HaiHS : Hàm phụ tính toán skip phân trang - end
 }
+// BKAV HaiHS : Định nghĩa lớp GroupService quản lý logic nghiệp vụ cho nhóm quyền - end
 
 module.exports = new GroupService();
