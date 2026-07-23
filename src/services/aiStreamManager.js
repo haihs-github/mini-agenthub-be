@@ -3,6 +3,7 @@ const redisStreamService = require("./redisStreamService");
 const conversationRepository = require("../repositories/conversationRepository");
 const { getEncoding } = require("js-tiktoken");
 const tiktokenEncoder = getEncoding("cl100k_base");
+const { AISERVICE } = require("../constants/aiServiceConst");
 
 // Cấu trúc: streamId -> { nextSeq, pending: Map<seq, event>, abortController, clientHandlers, ... }
 const streams = new Map();
@@ -122,10 +123,6 @@ class AIStreamManager {
   }
   // BKAV HaiHS : Kiểm tra trạng thái hoạt động của stream trong Redis - end
 
-  // ==========================================
-  // PRIVATE METHODS (Viết xuống phía dưới)
-  // ==========================================
-
   // BKAV HaiHS : Hàm phụ đếm token bằng encoder tiktoken - start
   #countTokens(text) {
     if (!text) return 0;
@@ -164,6 +161,7 @@ class AIStreamManager {
       const parsed = JSON.parse(dataStr);
       return parsed.content || parsed.choices?.[0]?.delta?.content || "";
     } catch (e) {
+      console.warn("[Stream Parser] Bỏ qua dòng không phải định dạng JSON:", dataStr);
       return "";
     }
   }
@@ -223,16 +221,16 @@ class AIStreamManager {
 
   // BKAV HaiHS : Hàm phụ phân phối và gửi sự kiện SSE tới client - start
   #sendSseEvent(res, event) {
-    if (event.type === "chunk") {
+    if (event.type === AISERVICE.STREAM_EVENTS.CHUNK) {
       res.write(`data: ${JSON.stringify({ content: event.content })}\n\n`);
       return false;
     }
-    if (event.type === "DONE") {
+    if (event.type === AISERVICE.STREAM_EVENTS.DONE) {
       this.#writeSseDone(res, event);
       res.end();
       return true;
     }
-    if (event.type === "ERROR") {
+    if (event.type === AISERVICE.STREAM_EVENTS.ERROR) {
       res.write(`data: ${JSON.stringify({ error: event.message })}\n\n`);
       res.end();
       return true;
@@ -294,7 +292,11 @@ class AIStreamManager {
     if (!cleanText || !currentState || abortController.signal.aborted) return;
 
     const seq = currentState.producerSeq++;
-    const event = { type: "chunk", seq, content: cleanText };
+    const event = {
+      type: AISERVICE.STREAM_EVENTS.CHUNK,
+      seq,
+      content: cleanText,
+    };
 
     currentState.fullText += cleanText;
 
@@ -354,7 +356,7 @@ class AIStreamManager {
       const { responseTime, usage } =
         this.#calculateUsageAndResponseTime(currentState);
       const doneEvent = {
-        type: "DONE",
+        type: AISERVICE.STREAM_EVENTS.DONE,
         isStopped: true,
         responseTime: currentState.responseTime || responseTime,
         usage,
@@ -366,7 +368,10 @@ class AIStreamManager {
 
   // BKAV HaiHS : Hàm phụ xử lý và bắn lỗi hệ thống chéo Redis/Client - start
   async #handleStreamGeneralError(streamId, err) {
-    const errorEvent = { type: "ERROR", message: err.message };
+    const errorEvent = {
+      type: AISERVICE.STREAM_EVENTS.ERROR,
+      message: err.message,
+    };
     await redisStreamService.publishChunk(streamId, errorEvent);
     this.#notifyLocalHandlers(streams.get(streamId), errorEvent);
   }
@@ -379,7 +384,7 @@ class AIStreamManager {
       this.#calculateUsageAndResponseTime(currentStateDone);
 
     const doneEvent = {
-      type: "DONE",
+      type: AISERVICE.STREAM_EVENTS.DONE,
       ...(currentStateDone && {
         isStopped: false,
         responseTime,
@@ -419,7 +424,8 @@ class AIStreamManager {
       unsubscribeControl = await redisStreamService.subscribeToChannel(
         streamId,
         (event) => {
-          if (event.type === "ABORT") abortController.abort();
+          if (event.type === AISERVICE.STREAM_EVENTS.ABORT)
+            abortController.abort();
         },
       );
 
@@ -476,10 +482,16 @@ class AIStreamManager {
       if (!state.connectionIsOpen) return;
       if (!state.isSynced) return state.liveBuffer.push(event);
 
-      if (event.type === "DONE" || event.type === "ABORT") {
+      if (
+        event.type === AISERVICE.STREAM_EVENTS.DONE ||
+        event.type === AISERVICE.STREAM_EVENTS.ABORT
+      ) {
         return state.handleTerminal(event);
       }
-      if (event.type === "chunk" && event.seq >= state.syncedSeq) {
+      if (
+        event.type === AISERVICE.STREAM_EVENTS.CHUNK &&
+        event.seq >= state.syncedSeq
+      ) {
         state.res.write(
           `data: ${JSON.stringify({ content: event.content })}\n\n`,
         );
@@ -501,13 +513,15 @@ class AIStreamManager {
   // BKAV HaiHS : Hàm phụ xử lý gộp các chunk lịch sử thành chuỗi hoàn chỉnh - start
   #processHistoryChunks(historyEvents) {
     const chunks = historyEvents
-      .filter((e) => e.type === "chunk")
+      .filter((e) => e.type === AISERVICE.STREAM_EVENTS.CHUNK)
       .sort((a, b) => a.seq - b.seq);
 
     return {
       chunks,
       fullText: chunks.map((e) => e.content).join(""),
-      doneEvent: historyEvents.find((e) => e.type === "DONE"),
+      doneEvent: historyEvents.find(
+        (e) => e.type === AISERVICE.STREAM_EVENTS.DONE,
+      ),
     };
   }
   // BKAV HaiHS : Hàm phụ xử lý gộp các chunk lịch sử thành chuỗi hoàn chỉnh - end
@@ -543,11 +557,17 @@ class AIStreamManager {
   // BKAV HaiHS : Hàm phụ ghi tiếp các gói tin tạm giữ trong buffer xuống Client - start
   async #replayBufferedEvents(liveBuffer, syncedSeq, handleTerminal, res) {
     for (const event of liveBuffer) {
-      if (event.type === "DONE" || event.type === "ABORT") {
+      if (
+        event.type === AISERVICE.STREAM_EVENTS.DONE ||
+        event.type === AISERVICE.STREAM_EVENTS.ABORT
+      ) {
         await handleTerminal(event);
         return true;
       }
-      if (event.type === "chunk" && event.seq >= syncedSeq) {
+      if (
+        event.type === AISERVICE.STREAM_EVENTS.CHUNK &&
+        event.seq >= syncedSeq
+      ) {
         res.write(`data: ${JSON.stringify({ content: event.content })}\n\n`);
       }
     }

@@ -7,5 +7,11 @@ module.exports = {
       IMAGE: "image",
       IMAGE_URL: "image_url",
     },
+    STREAM_EVENTS: {
+      CHUNK: "chunk",
+      DONE: "DONE",
+      ABORT: "ABORT",
+      ERROR: "ERROR",
+    },
   },
 };

@@ -224,7 +224,7 @@ class UserService {
       ...new Set([...updatedUser.permissions, ...groupPerms]),
     ];
 
-    const SECRET_KEY = process.env.JWT_SECRET || "Sieu_Mat_Ma_Cua_Toi_123";
+    const SECRET_KEY = process.env.JWT_SECRET;
     const newToken = jwt.sign(
       {
         id: updatedUser.id,

@@ -1,4 +1,5 @@
 const Redis = require("ioredis");
+const { AISERVICE } = require("../constants/aiServiceConst");
 
 // BKAV HaiHS : Định nghĩa lớp RedisStreamService điều hành việc đồng bộ hóa dữ liệu chéo máy chủ qua Redis - start
 class RedisStreamService {
@@ -151,7 +152,7 @@ class RedisStreamService {
       try {
         await this.ioredisClient.publish(
           channel,
-          JSON.stringify({ type: "ABORT" }),
+          JSON.stringify({ type: AISERVICE.STREAM_EVENTS.ABORT }),
         );
       } catch (e) {}
     }
