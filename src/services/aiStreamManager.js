@@ -159,9 +159,12 @@ class AIStreamManager {
   #parseJsonContent(dataStr) {
     try {
       const parsed = JSON.parse(dataStr);
-      return parsed.content || parsed.choices?.[0]?.delta?.content || "";
+      return parsed.content || "";
     } catch (e) {
-      console.warn("[Stream Parser] Bỏ qua dòng không phải định dạng JSON:", dataStr);
+      console.warn(
+        "[Stream Parser] Bỏ qua dòng không phải định dạng JSON:",
+        dataStr,
+      );
       return "";
     }
   }
@@ -331,12 +334,12 @@ class AIStreamManager {
     await conversationRepository.createMessage({
       role: "assistant",
       content: state.fullText,
-      modelName: state.modelName || "flowise",
+      modelName: state.modelName,
       conversationId: streamId,
       promptTokens: usage.prompt_tokens,
       completionTokens: usage.completion_tokens,
       totalTokens: usage.total_tokens,
-      responseTime: state.responseTime || responseTime,
+      responseTime: state.responseTime,
       isStopped,
     });
   }
