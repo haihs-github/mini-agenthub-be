@@ -1,9 +1,9 @@
 const fs = require("fs");
 const { Readable } = require("stream");
-const { HumanMessage, AIMessage } = require("@langchain/core/messages");
+const { HumanMessage, AIMessage, SystemMessage } = require("@langchain/core/messages");
 const { ChatGroq } = require("@langchain/groq");
 const { AISERVICE } = require("../../constants/aiServiceConst");
-const { GROQ_CONFIG } = require("../../constants/aiModel");
+const aiConfigManager = require("../../config/aiConfigManager");
 const BaseProvider = require("./baseProvider");
 
 // BKAV HaiHS : Lớp LangchainProvider xử lý giao tiếp qua Langchain với mô hình Groq - start
@@ -15,18 +15,32 @@ class LangchainProvider extends BaseProvider {
 
   // BKAV HaiHS : Thực thi gọi model qua Langchain ChatGroq và trả về stream SSE - start
   async generateStream(prompt, historyMessages, signal) {
+    const config = aiConfigManager.getModelConfig(this.modelName);
+
     const chatModel = new ChatGroq({
       model: this.modelName,
-      ...GROQ_CONFIG,
+      apiKey: process.env.GROQ_API_KEY,
+      temperature: config.temperature,
     });
 
-    const formattedMessages = historyMessages.map(msg => this.#formatSingleMessage(msg));
+    const formattedMessages = [];
+
+    // Chèn Prompt hệ thống cấu hình từ YAML ở đầu ngữ cảnh nếu có
+    if (config.system_prompt) {
+      formattedMessages.push(new SystemMessage({ content: config.system_prompt }));
+    }
+
+    formattedMessages.push(...historyMessages.map(msg => this.#formatSingleMessage(msg)));
 
     const currentMsg = historyMessages[historyMessages.length - 1];
     const currentContent = this.#buildMessageContent(prompt, currentMsg?.attachments);
     formattedMessages.push(new HumanMessage({ content: currentContent }));
 
-    this.#limitHistoryImages(formattedMessages);
+    const maxImages = (config.features && config.features.max_images !== undefined)
+      ? config.features.max_images
+      : AISERVICE.MAX_ALLOWED_IMAGES;
+
+    this.#limitHistoryImages(formattedMessages, maxImages);
 
     const langchainStream = await chatModel.stream(formattedMessages, {
       signal,
@@ -97,7 +111,7 @@ class LangchainProvider extends BaseProvider {
   // BKAV HaiHS : Hàm phụ chuyển tin nhắn thành object HumanMessage hoặc AIMessage - end
 
   // BKAV HaiHS : Hàm phụ khống chế số lượng ảnh tối đa gửi trong ngữ cảnh - start
-  #limitHistoryImages(messages, maxImages = AISERVICE.MAX_ALLOWED_IMAGES) {
+  #limitHistoryImages(messages, maxImages) {
     let imageCount = 0;
 
     for (let i = messages.length - 1; i >= 0; i--) {

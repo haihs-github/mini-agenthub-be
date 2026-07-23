@@ -1,0 +1,39 @@
+# BKAV HaiHS : Cấu hình khai báo các mô hình AI chạy trong hệ thống
+models:
+  - id: "llama-3.3-70b-versatile"
+    provider: "langchain"
+    temperature: 0.5
+    system_prompt: |
+      Bạn là một trợ lý AI hữu ích được phát triển bởi Bkav.
+      Hãy trả lời bằng tiếng Việt lịch sự và chính xác.
+    features:
+      supports_images: false
+      max_images: 0
+
+  - id: "llama-3.2-11b-vision-preview"
+    provider: "langchain"
+    temperature: 0.5
+    system_prompt: |
+      Bạn là một trợ lý AI phân tích hình ảnh và trả lời các câu hỏi từ người dùng.
+      Hãy phản hồi bằng tiếng Việt thân thiện, rõ ràng.
+    features:
+      supports_images: true
+      max_images: 5
+
+  - id: "mixtral-8x7b-32768"
+    provider: "langchain"
+    temperature: 0.5
+    system_prompt: |
+      Bạn là một trợ lý AI mạnh mẽ và đa năng.
+      Hãy trả lời bằng tiếng Việt ngắn gọn, súc tích.
+    features:
+      supports_images: false
+      max_images: 0
+
+  - id: "flowise"
+    provider: "flowise"
+    temperature: 0.5
+    system_prompt: ""
+    features:
+      supports_images: true
+      max_images: 1
