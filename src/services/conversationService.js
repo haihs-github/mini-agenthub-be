@@ -1,5 +1,5 @@
 const conversationRepository = require("../repositories/conversationRepository");
-const AppError = require("../utils/appError");
+const AppError = require("../errors/appError");
 const ERROR = require("../constants/errorCodes");
 const aiService = require("./aiService");
 

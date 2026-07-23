@@ -5,8 +5,8 @@ const { Readable } = require("stream");
 
 const { HumanMessage, AIMessage } = require("@langchain/core/messages");
 const { ChatGroq } = require("@langchain/groq");
-const { AISERVICE } = require("../constants/AiServiceConst");
-const { GROQ_CONFIG } = require("../constants/AiModel");
+const { AISERVICE } = require("../constants/aiServiceConst");
+const { GROQ_CONFIG } = require("../constants/aiModel");
 
 // BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - start
 if (process.env.HTTP_PROXY) {
@@ -145,7 +145,7 @@ class AiService {
 
   // BKAV HaiHS : Hàm phụ đếm ký tự từng ảnh hoặc text trong message - start
   #getItemLength(item) {
-    if (item?.type === "text") return item.text?.length || 0;
+    if (item?.type === "text") return item.text?.length || 0; // fix me: ko dc hard code
     if (item?.type === "image" || item?.type === "image_url")
       return AISERVICE.IMAGE_CHAR_EQUIVALENT;
     return 0;

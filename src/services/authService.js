@@ -1,7 +1,7 @@
 const userRepository = require("../repositories/userRepository");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const AppError = require("../utils/appError");
+const AppError = require("../errors/appError");
 const ERROR = require("../constants/errorCodes");
 const prisma = require("../models/prismaClient");
 

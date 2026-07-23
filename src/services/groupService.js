@@ -1,5 +1,5 @@
 const groupRepository = require("../repositories/groupRepository");
-const AppError = require("../utils/appError");
+const AppError = require("../errors/appError");
 const ERROR = require("../constants/errorCodes");
 const redisStreamService = require("./redisStreamService");
 
