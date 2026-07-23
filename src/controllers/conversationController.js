@@ -8,6 +8,19 @@ const { MESSAGES } = require("../constants/messages");
 
 // BKAV HaiHS : Định nghĩa lớp ConversationController điều phối nghiệp vụ phòng chat và SSE - start
 class ConversationController {
+  constructor() {
+    this.createConversation = this.createConversation.bind(this);
+    this.getMyConversations = this.getMyConversations.bind(this);
+    this.getConversationDetail = this.getConversationDetail.bind(this);
+    this.updateTitle = this.updateTitle.bind(this);
+    this.deleteConversation = this.deleteConversation.bind(this);
+    this.handleChat = this.handleChat.bind(this);
+    this.handleStreamReconnect = this.handleStreamReconnect.bind(this);
+    this.handleAbort = this.handleAbort.bind(this);
+    this.handleStop = this.handleStop.bind(this);
+    this.clearAllConversations = this.clearAllConversations.bind(this);
+  }
+
   // BKAV HaiHS : Tạo một cuộc hội thoại mới - start
   async createConversation(req, res, next) {
     try {

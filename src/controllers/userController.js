@@ -3,6 +3,17 @@ const { MESSAGES } = require("../constants/messages");
 
 // BKAV HaiHS : Định nghĩa lớp UserController quản lý thông tin người dùng và tài khoản - start
 class UserController {
+  constructor() {
+    this.createUser = this.createUser.bind(this);
+    this.getAllUsers = this.getAllUsers.bind(this);
+    this.getUserDetail = this.getUserDetail.bind(this);
+    this.updateUser = this.updateUser.bind(this);
+    this.deleteUser = this.deleteUser.bind(this);
+    this.searchUsers = this.searchUsers.bind(this);
+    this.updateMyProfile = this.updateMyProfile.bind(this);
+    this.deleteMyAccount = this.deleteMyAccount.bind(this);
+  }
+
   // BKAV HaiHS : tạo người dùng mới - start
   async createUser(req, res, next) {
     try {

@@ -5,6 +5,12 @@ const { MESSAGES } = require("../constants/messages");
 
 // BKAV HaiHS : Định nghĩa lớp AuthController quản lý xác thực và mật khẩu - start
 class AuthController {
+  constructor() {
+    this.login = this.login.bind(this);
+    this.refresh = this.refresh.bind(this);
+    this.logout = this.logout.bind(this);
+    this.changePassword = this.changePassword.bind(this);
+  }
   
   // ==========================================
   // PUBLIC METHODS (Viết lên phía trên)

@@ -5,6 +5,17 @@ const { MESSAGES } = require("../constants/messages");
 
 // BKAV HaiHS : Định nghĩa lớp GroupController quản lý và điều hành các nhóm quyền - start
 class GroupController {
+  constructor() {
+    this.createGroup = this.createGroup.bind(this);
+    this.updateGroup = this.updateGroup.bind(this);
+    this.addUsers = this.addUsers.bind(this);
+    this.deleteGroup = this.deleteGroup.bind(this);
+    this.removeUsers = this.removeUsers.bind(this);
+    this.getAllGroups = this.getAllGroups.bind(this);
+    this.getGroupDetail = this.getGroupDetail.bind(this);
+    this.searchGroups = this.searchGroups.bind(this);
+  }
+
   // BKAV HaiHS : Xử lý tạo nhóm mới - start
   async createGroup(req, res, next) {
     try {

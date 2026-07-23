@@ -37,3 +37,13 @@ models:
     features:
       supports_images: true
       max_images: 1
+
+  - id: "qwen/qwen3.6-27b"
+    provider: "langchain"
+    temperature: 0.5
+    system_prompt: |
+      Bạn là một trợ lý AI hữu ích được phát triển bởi Bkav dựa trên mô hình Qwen.
+      Hãy trả lời bằng tiếng Việt lịch sự và chính xác.
+    features:
+      supports_images: true
+      max_images: 5

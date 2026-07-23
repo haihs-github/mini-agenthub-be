@@ -1,4 +1,12 @@
+const { ProxyAgent, setGlobalDispatcher } = require("undici");
 const AiProviderFactory = require("./ai/aiProviderFactory");
+
+// BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - start
+if (process.env.HTTP_PROXY) {
+  const proxyAgent = new ProxyAgent({ uri: process.env.HTTP_PROXY });
+  setGlobalDispatcher(proxyAgent);
+}
+// BKAV HaiHS : Cấu hình Proxy toàn cục vượt tường lửa - end
 
 // BKAV HaiHS : Class chính chứa các phương thức quản lý giao tiếp với AI provider - start
 class AiService {
