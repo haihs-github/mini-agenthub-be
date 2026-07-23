@@ -145,8 +145,8 @@ class AiService {
 
   // BKAV HaiHS : Hàm phụ đếm ký tự từng ảnh hoặc text trong message - start
   #getItemLength(item) {
-    if (item?.type === "text") return item.text?.length || 0; // fix me: ko dc hard code
-    if (item?.type === "image" || item?.type === "image_url")
+    if (item?.type === AISERVICE.ITEM_TYPES.TEXT) return item.text?.length || 0;
+    if (item?.type === AISERVICE.ITEM_TYPES.IMAGE || item?.type === AISERVICE.ITEM_TYPES.IMAGE_URL)
       return AISERVICE.IMAGE_CHAR_EQUIVALENT;
     return 0;
   }
@@ -198,13 +198,13 @@ class AiService {
     if (!attachments.length) return text;
 
     const images = attachments.map((att) => ({
-      type: "image_url",
+      type: AISERVICE.ITEM_TYPES.IMAGE_URL,
       image_url: {
         url: this.#convertLocalFileToBase64(att.filePath, att.fileType),
       },
     }));
 
-    return [{ type: "text", text }, ...images];
+    return [{ type: AISERVICE.ITEM_TYPES.TEXT, text }, ...images];
   }
   // BKAV HaiHS : Hàm phụ gộp tin nhắn và danh sách đính kèm theo chuẩn LangChain - end
 
@@ -226,7 +226,7 @@ class AiService {
       if (!Array.isArray(msg.content)) continue;
 
       msg.content = msg.content.filter((item) => {
-        if (item.type !== "image_url") return true;
+        if (item.type !== AISERVICE.ITEM_TYPES.IMAGE_URL) return true;
         if (imageCount < maxImages) {
           imageCount++;
           return true;
